@@ -15,8 +15,8 @@ services:
     pids_limit: 256
     security_opt:
       - no-new-privileges:true
-    cap_drop:
-      - ALL
+    # Use Docker's default capability set for upstream s6-overlay initialization.
+    # A blanket cap_drop: ALL breaks s6 supervision and ownership handling.
     logging:
       driver: json-file
       options:
