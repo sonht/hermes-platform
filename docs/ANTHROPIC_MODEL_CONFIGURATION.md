@@ -71,3 +71,23 @@ This only checks file contents, not whether the running gateway has reloaded the
 4. Confirm supported model IDs from authoritative Anthropic catalog.
 5. Run an inexpensive real test and capture redacted success/error details.
 6. Verify restart/persistence and that no secret appears in Git history or logs.
+
+## P2.23 — Live API smoke test (2026-10-16)
+
+Observed on Rocky using the running container and UID 10000:
+
+```bash
+docker exec -u 10000 hermes-platform-agent hermes status
+# Model: anthropic/claude-sonnet-5-5
+# Provider: Anthropic
+# Providers: Anthropic
+# Gateway: running
+
+docker exec -u 10000 hermes-platform-agent \
+  hermes -m anthropic/claude-sonnet-5-5 \
+  -z 'Hãy trả lời ngắn gọn: SNOMED CT là gì?'
+```
+
+**Observed outcome: PASS.** Hermes returned a substantive Vietnamese explanation of SNOMED CT (clinical terminology, concept identifiers, hierarchy, semantic relations, SNOMED International) with no CLI error. This confirms that the configured model string was usable for this specific live inference request at test time, beyond merely being written to config. It does **not** establish long-term reliability, cost, latency, available alternate model IDs, or gateway HTTP readiness.
+
+No API keys or credentials were captured in this record. Next: validate other requested model IDs separately, add model selector only after authentication/authorization and gateway access review, and implement healthchecks, backup and rollback.
