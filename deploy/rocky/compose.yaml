@@ -1,0 +1,34 @@
+name: hermes-platform
+
+services:
+  hermes:
+    image: nousresearch/hermes-agent@sha256:36099926da316742423544e055d4734777105ffe6341873af5459b957d0c2919
+    container_name: hermes-platform-agent
+    restart: unless-stopped
+    init: false
+    volumes:
+      - hermes_data:/opt/data
+    networks:
+      - hermes_internal
+    mem_limit: 4g
+    cpus: 2.0
+    pids_limit: 256
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # No ports published until upstream gateway and authentication are validated.
+    # No Docker socket or production mounts.
+    # Upstream image defaults to root; non-root support needs validation before production release.
+
+volumes:
+  hermes_data:
+
+networks:
+  hermes_internal:
+    driver: bridge
