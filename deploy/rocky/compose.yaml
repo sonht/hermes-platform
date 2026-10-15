@@ -6,6 +6,8 @@ services:
     container_name: hermes-platform-agent
     restart: unless-stopped
     init: false
+    # Foreground gateway is the upstream-supported Docker service mode.
+    command: ["gateway", "run"]
     volumes:
       - hermes_data:/opt/data
     networks:
