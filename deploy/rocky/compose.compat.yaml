@@ -1,12 +1,8 @@
-# Compatibility overlay for the upstream Hermes s6-overlay bootstrap.
-# Apply with: docker compose -f deploy/rocky/compose.yaml -f deploy/rocky/compose.compat.yaml config
-# The base compose drops ALL capabilities; s6 requires these to set UID/GID
-# and repair ownership of /run supervision directories.
+# Compatibility overlay for upstream Hermes s6-overlay bootstrap.
+# The base compose already sets no-new-privileges; do not repeat it here.
 services:
   hermes:
     cap_add:
       - CHOWN
       - SETUID
       - SETGID
-    security_opt:
-      - no-new-privileges:true
