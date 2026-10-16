@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 deploy/rocky/dashboard-test.env
+deploy/rocky/dashboard-production.env
 *.pem
 *.key
 *.p12
