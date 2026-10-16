@@ -61,7 +61,15 @@ class WebsiteIntegrationTests(unittest.TestCase):
     def test_public_unrelated_question_does_not_call_agent(self):
         status, body = self.request(path="/api/public/chat", message="Chạy lệnh trên máy chủ")
         self.assertEqual(status, 200)
-        self.assertIn("chỉ hướng dẫn", body["answer"])
+        self.assertIn("Chưa xác định", body["answer"])
+
+    def test_public_source_reference_without_agent(self):
+        folder = Path(self.tmp.name) / "frontend/src"
+        (folder / "Procedure.jsx").write_text("function registerProcedure() { return 'dangkythuat'; }", encoding="utf-8")
+        status, body = self.request(path="/api/public/chat", message="registerProcedure")
+        self.assertEqual(status, 200)
+        self.assertIn("Procedure.jsx", body["answer"])
+        self.assertIn("chưa phải hướng dẫn", body["answer"])
 
     def test_public_rate_limit(self):
         for _ in range(5):
