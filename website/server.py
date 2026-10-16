@@ -72,4 +72,6 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(data)
 
 if __name__ == "__main__":
-    if not os.environ.get("HERMES_WEB_TOKEN"):\n        raise SystemExit("Set HERMES_WEB_TOKEN before starting website")\n    ThreadingHTTPServer(("127.0.0.1", int(os.environ.get("HERMES_WEB_PORT", "8099"))), Handler).serve_forever()
+    if not os.environ.get("HERMES_WEB_TOKEN"):
+        raise SystemExit("Set HERMES_WEB_TOKEN before starting website")
+    ThreadingHTTPServer(("127.0.0.1", int(os.environ.get("HERMES_WEB_PORT", "8099"))), Handler).serve_forever()
