@@ -16,7 +16,8 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT.parent))
 from support.user_journey_builder import build_journey
 from support.hermes_gateway import ask_hermes
-from support.code_aware import public_answer
+from support.code_aware import public_answer, retrieve
+from support.public_inference import answer as public_ai_answer
 
 _public_lock = threading.Lock()
 _public_requests = defaultdict(deque)
@@ -94,7 +95,7 @@ class Handler(SimpleHTTPRequestHandler):
             topic = "register" if any(word in question.lower() for word in ("đăng ký", "tạo tài khoản", "dang ky")) else "login" if any(word in question.lower() for word in ("đăng nhập", "login", "dang nhap")) else None
             repo = os.environ.get("NMPRP_SOURCE_PATH")
             if public and not topic:
-                answer = public_answer(repo, question) if repo else "Chưa cấu hình mã nguồn hỗ trợ."
+                answer = (public_ai_answer(question, retrieve(repo, question)) if os.environ.get("HERMES_PUBLIC_AI_ENABLED") == "1" else public_answer(repo, question)) if repo else "Chưa cấu hình mã nguồn hỗ trợ."
             elif not topic or not repo:
                 answer = "Hiện chỉ hỗ trợ hướng dẫn đăng nhập/đăng ký dm.kcb.vn; cần cấu hình NMPRP_SOURCE_PATH để đọc mã nguồn."
             else:
