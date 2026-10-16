@@ -1,0 +1,40 @@
+# Isolated evaluation only. Never combine this file with compose.yaml.
+name: hermes-dashboard-test
+
+services:
+  dashboard:
+    image: nousresearch/hermes-agent@sha256:36099926da316742423544e055d4734777105ffe6341873af5459b957d0c2919
+    container_name: hermes-dashboard-test
+    restart: "no"
+    # The upstream Docker image accepts Hermes CLI arguments as its command.
+    # Unlike the production gateway, this runs only the dashboard CLI.
+    command: ["dashboard", "--host", "0.0.0.0", "--port", "9119", "--no-open", "--skip-build"]
+    env_file:
+      - path: ./dashboard-test.env
+        required: true
+    environment:
+      HOME: /opt/data
+    ports:
+      - "127.0.0.1:19119:9119"
+    volumes:
+      - dashboard_test_data:/opt/data
+    networks:
+      - dashboard_test_internal
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  dashboard_test_data:
+    name: hermes_dashboard_test_data
+
+networks:
+  dashboard_test_internal:
+    driver: bridge
