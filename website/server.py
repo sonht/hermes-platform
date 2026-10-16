@@ -11,6 +11,7 @@ import sys
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT.parent))
 from support.user_journey_builder import build_journey
+from support.hermes_gateway import ask_hermes
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -34,9 +35,12 @@ class Handler(SimpleHTTPRequestHandler):
                 answer = "Hiện chỉ hỗ trợ hướng dẫn đăng nhập/đăng ký dm.kcb.vn; cần cấu hình NMPRP_SOURCE_PATH để đọc mã nguồn."
             else:
                 result = build_journey(repo, topic)
-                answer = ("\\n".join(f"{i}. {step}" for i, step in enumerate(result["steps"], 1)) + "\\n\\nBản nháp cần xác minh với giao diện hiện hành.") if result["steps"] else "Chưa đủ bằng chứng mã nguồn để tạo hướng dẫn."
+                answer = (ask_hermes(question, result["evidence"]) if os.environ.get("HERMES_AGENT_ENABLED") == "1" else "\n".join(f"{i}. {step}" for i, step in enumerate(result["steps"], 1)) + "\n\nBản nháp cần xác minh với giao diện hiện hành.") if result["steps"] else "Chưa đủ bằng chứng mã nguồn để tạo hướng dẫn."
             data = json.dumps({"answer": answer}, ensure_ascii=False).encode()
             self.send_response(200)
+        except RuntimeError:
+            data = json.dumps({"error": "Hermes chưa sẵn sàng; vui lòng thử lại sau."}, ensure_ascii=False).encode()
+            self.send_response(503)
         except (ValueError, KeyError, json.JSONDecodeError):
             data = json.dumps({"error": "Yêu cầu không hợp lệ"}).encode()
             self.send_response(400)
