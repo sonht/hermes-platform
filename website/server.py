@@ -5,6 +5,7 @@ No direct Hermes LLM connection yet; never expose an unauthenticated agent.
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import json
+import hmac
 import os
 import sys
 
@@ -17,15 +18,35 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
+    def do_GET(self):
+        if self.path.startswith("/api/"):
+            self.send_error(404)
+            return
+        return super().do_GET()
+
     def do_POST(self):
         if self.path != "/api/chat":
             self.send_error(404)
             return
-        if int(self.headers.get("Content-Length", "0") or "0") > 4096:
+        configured = os.environ.get("HERMES_WEB_TOKEN", "")
+        provided = self.headers.get("Authorization", "")
+        if not configured or not hmac.compare_digest(provided, "Bearer " + configured):
+            self.send_response(401)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(b'{"error":"Unauthorized"}')
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self.send_error(400)
+            return
+        if length < 1 or length > 4096:
             self.send_error(413)
             return
         try:
-            payload = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
+            payload = json.loads(self.rfile.read(length))
             question = payload["message"]
             if not isinstance(question, str) or not 1 <= len(question.strip()) <= 2000:
                 raise ValueError("invalid message")
@@ -51,4 +72,4 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(data)
 
 if __name__ == "__main__":
-    ThreadingHTTPServer(("127.0.0.1", int(os.environ.get("HERMES_WEB_PORT", "8099"))), Handler).serve_forever()
+    if not os.environ.get("HERMES_WEB_TOKEN"):\n        raise SystemExit("Set HERMES_WEB_TOKEN before starting website")\n    ThreadingHTTPServer(("127.0.0.1", int(os.environ.get("HERMES_WEB_PORT", "8099"))), Handler).serve_forever()
