@@ -8,12 +8,12 @@ from pathlib import Path
 from unittest.mock import patch
 from http.server import ThreadingHTTPServer
 
-from website.server import Handler
+from website.server import Handler, _public_requests, _public_lock
 from support.hermes_gateway import ask_hermes
 
 class WebsiteIntegrationTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        with _public_lock:\n            _public_requests.clear()\n        self.tmp = tempfile.TemporaryDirectory()
         folder = Path(self.tmp.name) / "frontend/src"
         folder.mkdir(parents=True)
         (folder / "AuthAdmin.jsx").write_text("GoogleLogin đăng nhập", encoding="utf-8")
