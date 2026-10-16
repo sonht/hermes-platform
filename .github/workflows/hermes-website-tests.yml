@@ -1,0 +1,19 @@
+name: Hermes Website Tests
+on:
+  push:
+    branches: [feat/dm-code-aware-support]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile Python
+        run: python -m compileall -q support website tests
+      - name: Run offline integration tests
+        run: python -m unittest discover -s tests -v

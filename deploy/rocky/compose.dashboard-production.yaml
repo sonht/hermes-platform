@@ -1,0 +1,14 @@
+# OPT-IN production override. Never run without the migration checklist.
+# Use: docker compose -f deploy/rocky/compose.yaml -f deploy/rocky/compose.dashboard-production.yaml ...
+# Compose merges services; this modifies ONLY the existing hermes service.
+services:
+  hermes:
+    env_file:
+      - path: ./dashboard-production.env
+        required: true
+    environment:
+      HERMES_DASHBOARD: "1"
+      HERMES_DASHBOARD_HOST: "0.0.0.0"
+      HERMES_DASHBOARD_PORT: "9119"
+    ports:
+      - "127.0.0.1:19119:9119"

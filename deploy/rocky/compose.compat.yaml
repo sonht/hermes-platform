@@ -1,0 +1,8 @@
+# Compatibility overlay for upstream Hermes s6-overlay bootstrap.
+# The base compose already sets no-new-privileges; do not repeat it here.
+services:
+  hermes:
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
