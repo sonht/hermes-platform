@@ -15,8 +15,16 @@ def ask_hermes(question: str, evidence: list[dict]) -> str:
               f"Câu hỏi: {question}")
     binary = os.environ.get("HERMES_CLI_PATH", "/usr/local/bin/hermes")
     model = os.environ.get("HERMES_SUPPORT_MODEL", "anthropic/claude-sonnet-5-5")
+    mode = os.environ.get("HERMES_GATEWAY_MODE", "local")
+    if mode == "local":
+        command = [binary, "-m", model, "-z", prompt]
+    elif mode == "docker":
+        command = ["docker", "exec", "-i", "-u", "10000",
+                   "hermes-platform-agent", "hermes", "-m", model, "-z", prompt]
+    else:
+        raise RuntimeError("Unsupported Hermes gateway mode")
     try:
-        result = subprocess.run([binary, "-m", model, "-z", prompt],
+        result = subprocess.run(command,
                                 capture_output=True, text=True, timeout=45,
                                 check=False, stdin=subprocess.DEVNULL)
     except (OSError, subprocess.TimeoutExpired) as exc:
