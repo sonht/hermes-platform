@@ -21,3 +21,10 @@
 
 ## Next milestone
 Build offline redacted documentation/index from approved sources; run inference in a sandbox without tools; test prompt injection, secrets, concurrency and cost controls.
+
+## Optional public inference (disabled by default)
+- `HERMES_PUBLIC_AI_ENABLED=1` explicitly opts in to a **tool-free** HTTPS chat-completions API, not the Hermes CLI.
+- Set `HERMES_PUBLIC_AI_URL`, `HERMES_PUBLIC_AI_MODEL`, `HERMES_PUBLIC_AI_KEY` via a protected service environment. Do not commit credentials.
+- Current retrieval returns **file paths and line numbers only**, not code contents. Thus the AI must **not invent detailed instructions**. This is a scaffolding milestone, not a full code-understanding bot.
+- Before enabling for the public, implement a redacted and approved documentation index, API host allowlist, per-user quota at Caddy/edge, billing limits, and security review.
+- The existing five-requests-per-minute shared limiter remains a limitation. Keep inference disabled on production until resolved.
