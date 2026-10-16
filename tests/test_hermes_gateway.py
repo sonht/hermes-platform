@@ -11,7 +11,7 @@ class GatewayTests(unittest.TestCase):
         with patch.dict(os.environ, {"HERMES_AGENT_ENABLED": "1", "HERMES_GATEWAY_MODE": "docker"}):
             self.assertEqual(ask_hermes("Đăng nhập", [{"path":"frontend/src/AuthAdmin.jsx", "line":1, "excerpt":"GoogleLogin"}]), "Hướng dẫn")
         args, kwargs = run.call_args
-        self.assertEqual(args[0][:7], ["docker", "exec", "-i", "-u", "10000", "hermes-platform-agent", "hermes", "-m"])
+        self.assertEqual(args[0][:8], ["docker", "exec", "-i", "-u", "10000", "hermes-platform-agent", "hermes", "-m"])
         self.assertEqual(kwargs["timeout"], 45)
         self.assertFalse(kwargs["check"])
 
