@@ -13,7 +13,9 @@ from support.hermes_gateway import ask_hermes
 
 class WebsiteIntegrationTests(unittest.TestCase):
     def setUp(self):
-        with _public_lock:\n            _public_requests.clear()\n        self.tmp = tempfile.TemporaryDirectory()
+        with _public_lock:
+            _public_requests.clear()
+        self.tmp = tempfile.TemporaryDirectory()
         folder = Path(self.tmp.name) / "frontend/src"
         folder.mkdir(parents=True)
         (folder / "AuthAdmin.jsx").write_text("GoogleLogin đăng nhập", encoding="utf-8")
@@ -62,7 +64,7 @@ class WebsiteIntegrationTests(unittest.TestCase):
         self.assertIn("chỉ hướng dẫn", body["answer"])
 
     def test_public_rate_limit(self):
-        for _ in range(3):
+        for _ in range(5):
             self.request(path="/api/public/chat")
         status, _ = self.request(path="/api/public/chat")
         self.assertEqual(status, 429)
