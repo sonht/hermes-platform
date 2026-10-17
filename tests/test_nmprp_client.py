@@ -1,5 +1,6 @@
 import json
 import threading
+import urllib.parse
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -42,6 +43,14 @@ class H(BaseHTTPRequestHandler):
             return self._send(401, {"detail": "no"})
         if self.path.startswith("/admin/ai/status"):
             return self._send(STATE["ai_code"], STATE["ai"])
+        if self.path.startswith("/admin/hermes/phan-hoi"):
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            sau, n = (q.get("sau") or [""])[0], int((q.get("limit") or ["200"])[0])
+            if STATE.get("ignore_cursor"):
+                sau = ""                                                  # máy chủ cũ: bỏ qua con trỏ
+            rows = [r for r in STATE["fb"] if not sau or (r["luc"], r["goi_y_id"]) > tuple(sau.split("|", 1))][:n]
+            return self._send(200, {"ok": True, "phan_hoi": rows,
+                                    "tiep": ("%s|%s" % (rows[-1]["luc"], rows[-1]["goi_y_id"])) if rows else ""})
         self._send(200, {"ok": True, "nodes": [{"ten": "Noi soi", "dai_ma": "14000 - 14350"}]})
 
 
@@ -59,6 +68,10 @@ class ClientTest(unittest.TestCase):
     def setUp(self):
         SEEN.clear()
         STATE["expire_once"] = False
+        STATE["ignore_cursor"] = False
+        STATE["fb"] = [{"goi_y_id": "HG_%02d" % i, "pl2_code": "BS_6.%d0" % i, "branch_key": "A > B", "quyet_dinh": "TU_CHOI",
+                        "ly_do": "sai", "branch_key_sua": "A > C", "nhan": "EXPERT_FEEDBACK", "luc": "2026-10-17T10:00:0%d.000000Z" % i}
+                       for i in range(5)]
         STATE["ai"], STATE["ai_code"] = {"ok": True, "cong_tac": True, "key_masked": "sk-***"}, 200
 
     def client(self, pw="pw"):
@@ -138,6 +151,36 @@ class ClientTest(unittest.TestCase):
                          ({"cong_tac": 1}, 200), ({"detail": "x"}, 500), ({"detail": "x"}, 403)]:
             STATE["ai"], STATE["ai_code"] = ai, code
             self.assertFalse(self.client().ai_cong_tac_bat(), (ai, code))      # lỗi/thiếu/lạ ⇒ TẮT
+
+    def test_phan_hoi_doc_theo_con_tro_du_trang_va_giu_ma_nguyen_van(self):
+        rows, cur = self.client().phan_hoi_moi(limit=2)
+        self.assertEqual([r["goi_y_id"] for r in rows], ["HG_00", "HG_01", "HG_02", "HG_03", "HG_04"])
+        self.assertEqual(rows[0]["pl2_code"], "BS_6.00")                      # tiền tố BS_ và số 0 giữ nguyên
+        self.assertEqual(cur, "2026-10-17T10:00:04.000000Z|HG_04")
+        STATE["fb"].append(dict(STATE["fb"][0], goi_y_id="HG_05", luc="2026-10-17T10:00:09.000000Z"))
+        rows2, cur2 = self.client().phan_hoi_moi(sau=cur)                     # lần chạy sau: chỉ phần MỚI
+        self.assertEqual([r["goi_y_id"] for r in rows2], ["HG_05"])
+        self.assertEqual(cur2, "2026-10-17T10:00:09.000000Z|HG_05")
+        self.assertEqual(self.client().phan_hoi_moi(sau=cur2), ([], cur2))     # hết: giữ nguyên con trỏ
+        gets = [x[1] for x in SEEN if x[0] == "GET" and "phan-hoi" in x[1]]
+        self.assertTrue(all(g.startswith("/admin/hermes/phan-hoi") for g in gets) and len(gets) >= 5)
+
+    def test_phan_hoi_may_chu_bo_qua_con_tro_thi_khong_lap_vo_han(self):
+        STATE["ignore_cursor"] = True
+        rows, _ = self.client().phan_hoi_moi(limit=2, toi_da_trang=50)
+        self.assertEqual(len(rows), 2)                                        # trang lặp lại ⇒ dừng, không vòng lặp vô hạn
+        self.assertLessEqual(len([x for x in SEEN if x[0] == "GET" and "phan-hoi" in x[1]]), 3)
+
+    def test_duong_admin_hermes_khac_van_bi_chan_chi_phan_hoi_duoc_doc(self):
+        c = self.client()
+        for path in ("/admin/hermes/goi-y", "/admin/hermes/tom-tat", "/admin/hermes/su-kien", "/admin/hermes/phan-hoi/x",
+                     "/admin/hermes/phan-hoi/../goi-y", "/admin/hermes/goi-y/HG_1/duyet"):
+            with self.assertRaises(NmprpError, msg=path):
+                c.get(path)
+        for path in ("/admin/hermes/goi-y/HG_1/duyet", "/admin/hermes/phan-hoi"):     # duyệt là việc của người, không phải Hermes
+            with self.assertRaises(NmprpError, msg=path):
+                c.post(path, {"quyet_dinh": "DONG_Y", "ly_do": "x"})
+        self.assertEqual([x for x in SEEN if x[0] == "GET" and "/admin/hermes/" in x[1]], [])
 
     def test_missing_config(self):
         with self.assertRaises(NmprpError):

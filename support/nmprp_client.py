@@ -1,4 +1,4 @@
-"""Client for the NMPRP (dm.kcb.vn) API, for Hermes pilot jobs: reads plus TWO narrow writes.
+"""Client for the NMPRP (dm.kcb.vn) API, for Hermes pilot jobs: reads (incl. reviewer feedback) plus TWO narrow writes.
 
 Design rules (see docs/NMPRP_HERMES_API_ACCESS.md):
 - Only GET requests after login, plus POST to exactly /admin/hermes/goi-y and /admin/hermes/su-kien
@@ -40,6 +40,9 @@ _ALLOWED_GET = (
     (re.compile(r"^/review/search$"), {"pl1", "pl3"}),
     (re.compile(r"^/review/chapters$"), {"pl1", "pl3"}),
     (re.compile(r"^/review/map$"), {"pl1"}),
+    # Reviewer feedback on Hermes' own suggestions (read-only, no reviewer names). `/admin/hermes/goi-y` (GET), `/tom-tat`
+    # and `/su-kien` (GET) are admin-only tab endpoints and deliberately NOT here.
+    (re.compile(r"^/admin/hermes/phan-hoi$"), None),
 )
 _BLOCKED_PATH_PARTS = ("/ma-cpt",)
 
@@ -181,6 +184,31 @@ class NmprpClient:
             return self.get("/admin/ai/status").get("cong_tac") is True
         except NmprpError:
             return False
+
+    def phan_hoi(self, sau="", limit=200):
+        """One page of reviewer feedback, OLD -> NEW. `sau` is the `tiep` cursor of the previous page ("" = from the start)."""
+        return self.get("/admin/hermes/phan-hoi", sau=sau, limit=limit)
+
+    def phan_hoi_moi(self, sau="", limit=200, toi_da_trang=50):
+        """Read ALL feedback after cursor `sau`. Returns (rows, new_cursor); the caller stores new_cursor for the next run.
+
+        Rows are de-duplicated by goi_y_id. Stops when a page is empty, has no new row (a server that ignores the cursor would
+        otherwise repeat the same page forever) or after `toi_da_trang` pages. Feedback is a PROPOSAL signal (EXPERT_FEEDBACK),
+        never a gold label; do not turn it into memory or rules from a single row."""
+        rows, thay = [], set()
+        for _ in range(max(1, int(toi_da_trang))):
+            d = self.phan_hoi(sau=sau, limit=limit)
+            trang = d.get("phan_hoi") if isinstance(d, dict) else None
+            if not trang:
+                break
+            moi = [r for r in trang if r.get("goi_y_id") not in thay]
+            if not moi:
+                break
+            for r in moi:
+                thay.add(r.get("goi_y_id"))
+            rows.extend(moi)
+            sau = d.get("tiep") or sau
+        return rows, sau
 
     def post_goi_y(self, items):
         """Send a batch (<=200) of UNREVIEWED suggestions; the server forces source and status."""

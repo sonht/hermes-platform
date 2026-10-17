@@ -4,7 +4,7 @@
 
 
 ## Phạm vi
-Giai đoạn thí điểm: **ĐỌC** cộng **HAI đường ghi hẹp** (`POST /admin/hermes/goi-y`, `POST /admin/hermes/su-kien`, vào bảng riêng `hermes_*` của NMPRP, gợi ý luôn CHƯA DUYỆT). Mọi POST khác bị từ chối trước khi gọi mạng. Code: `support/nmprp_client.py`, test: `tests/test_nmprp_client.py` (offline, máy chủ giả).
+Giai đoạn thí điểm: **ĐỌC** (gồm phản hồi của người duyệt, `GET /admin/hermes/phan-hoi`) cộng **HAI đường ghi hẹp** (`POST /admin/hermes/goi-y`, `POST /admin/hermes/su-kien`, vào bảng riêng `hermes_*` của NMPRP, gợi ý luôn CHƯA DUYỆT). Mọi POST khác bị từ chối trước khi gọi mạng. Code: `support/nmprp_client.py`, test: `tests/test_nmprp_client.py` (offline, máy chủ giả).
 
 ## Tài khoản dịch vụ (việc của chủ dự án trên NMPRP)
 - Tạo một tài khoản riêng cho Hermes, cấp tác vụ **`studio_cpt`**, **không** phải admin.
@@ -28,6 +28,12 @@ Mặc định (công tắc tắt):
 - Khi đã đăng nhập, `/admin/cpt-tree/khung` trả thêm `dai_ma` (dải mã CPT): client **xoá** `dai_ma`, `ma_cpt`, `cpt_code`, `cpt_codes`, `cpt_range` ở mọi cấp trước khi dữ liệu tới Hermes.
   Danh sách khoá là phòng thủ thêm, chưa kiểm chứng đầy đủ với mọi đầu ra của NMPRP.
 - `/admin/cpt-tree/khung/bao-gom` («Bao gồm/Loại trừ», từ gói `CPT_Danh_muc_dich`) **chưa** được cho phép: cần chủ dự án xác nhận nội dung có chứa văn bản bản quyền hay không.
+
+## Đọc phản hồi của người duyệt (vòng phản hồi)
+- Client có `phan_hoi(sau, limit)` (một trang) và `phan_hoi_moi(sau)` (đọc hết phần mới, trả `(các dòng, con trỏ mới)`). Job tự lưu con trỏ giữa hai lần chạy; con trỏ rỗng = đọc từ đầu.
+- Chỉ đường `GET /admin/hermes/phan-hoi` được thêm. `GET /admin/hermes/goi-y`, `/tom-tat`, `/su-kien` là đường của tab (chỉ admin) nên **không** nằm trong danh sách cho phép. Hermes **không** gọi được đường duyệt (`POST .../duyet`): quyết định là của người.
+- Mỗi dòng phản hồi là `EXPERT_FEEDBACK` (ý kiến thẩm định), **không** phải nhãn vàng; một dòng đơn lẻ không đủ để đề xuất đổi quy tắc (cần từ 2 ca có nguồn). Quyết định `SUA` kèm `branch_key_sua` (nút đúng do chuyên gia nhập). Không có tên người duyệt.
+- Đọc theo con trỏ cần máy chủ NMPRP có bản đọc theo con trỏ (nhánh `viec/hermes-phan-hoi-sua` của `nmprp`, xếp chồng trên #697). Với bản cũ chưa có con trỏ, client dừng khi trang lặp lại thay vì lặp vô hạn.
 
 ## Chưa kiểm chứng
 - Đường mạng từ container Hermes tới NMPRP (địa chỉ nội bộ hay qua `dm.kcb.vn`); client nhận `NMPRP_BASE_URL`.
