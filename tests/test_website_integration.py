@@ -104,6 +104,21 @@ class WebsiteIntegrationTests(unittest.TestCase):
                 self.assertEqual(json.loads(response.read())["rows"][0]["count"], 1)
                 conn.close()
 
+    def test_report_triage_requires_auth(self):
+        conn = HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
+        conn.request("GET", "/api/admin/reports")
+        response = conn.getresponse()
+        self.assertEqual(response.status, 401)
+        response.read()
+        conn.close()
+        conn = HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
+        conn.request("POST", "/api/admin/report/status", '{"id":1,"status":"resolved"}',
+                     {"Content-Type": "application/json"})
+        response = conn.getresponse()
+        self.assertEqual(response.status, 401)
+        response.read()
+        conn.close()
+
     def test_application_routes(self):
         for path, marker in (("/", "Hermes Platform"), ("/chat", "Cổng hỗ trợ"),
                              ("/dashboard", "Support Intelligence"), ("/web", "Support Widget")):
