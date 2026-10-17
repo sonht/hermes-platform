@@ -1,0 +1,52 @@
+%%{init: {"theme":"base","flowchart":{"htmlLabels":true,"curve":"linear","nodeSpacing":24,"rankSpacing":60},"themeVariables":{"fontSize":"16px","fontFamily":"Arial","lineColor":"#14437F"}}}%%
+flowchart TB
+  ND["<b>Quản trị viên NMPRP</b><br/>(tab Hermes chỉ admin thấy)"]
+  CTRL["<b>Phanh thật</b><br/>hermes pause · tắt tài khoản dịch vụ<br/>thu hồi/đặt trần khoá Claude"]
+
+  subgraph HM["HERMES AGENT — Rocky, hermes.kcb.vn (tách khỏi NMPRP)"]
+    direction LR
+    UI["Dashboard /agent · Chat /chat<br/>(qua Tailscale)"]
+    BD["<b>Project Memory</b><br/>SOUL · AGENTS · MEMORY<br/>4 kỹ năng (có phiên bản)"]
+    LE["<b>Learning &amp; Feedback Engine</b><br/>so đề xuất với quyết định chuyên gia<br/>nhận diện lỗi lặp (từ 2 ca có nguồn)<br/>chỉ ĐỀ XUẤT sửa kỹ năng"]
+    TL["<b>nmprp_client</b><br/>cổng duy nhất tới NMPRP"]
+    UI --- BD --- LE --- TL
+  end
+  CL["Claude API<br/>(khoá riêng của Hermes)"]
+
+  subgraph NM["NMPRP — dm.kcb.vn"]
+    direction TB
+    API["API tích hợp: xác thực · phân quyền (studio_cpt)<br/>giới hạn dữ liệu · nhật ký kiểm toán"]
+    DATA["<b>Dữ liệu nguồn</b><br/>PL2 · PL1 (hết hiệu lực 01/01/2028)<br/>Khung cây CPT (không có mã CPT)"]
+    PIPE["<b>CPN-AI A1 → A6</b> chạy độc lập như hiện nay<br/>(công tắc AI + call_text)"]
+    JOBQ["<i>Hàng đợi tác vụ (giai đoạn 2, đề xuất)</i><br/>chỉ phát việc khi công tắc AI bật"]
+    HG["<b>Kho gợi ý riêng của Hermes</b><br/>gợi ý CHO_XEM · sự kiện"]
+    TAB["<b>Tab Hermes ⇄ NMPRP</b> (admin)"]
+    STU["<b>Chuyên gia thẩm định</b> (Studio / cổng duyệt)<br/>chấp nhận · sửa · từ chối, kèm lý do"]
+    REAL["Ánh xạ chính thức"]
+    FB["<b>Kho phản hồi chuyên gia</b> (đề xuất)<br/>EXPERT_FEEDBACK → VERIFIED_KNOWLEDGE<br/>có phiên bản, truy hồi được"]
+    GOLD["<b>Nhãn vàng GOLD_STANDARD</b><br/>chủ dự án và chuyên gia gán độc lập<br/>không lấy từ gợi ý của Hermes"]
+    DATA --> PIPE
+    HG --> TAB --> STU
+    PIPE --> STU
+    STU --> REAL
+    STU --> FB
+  end
+
+  ND -->|"giao việc, hỏi"| UI
+  ND -->|"xem kết quả"| TAB
+  TL -->|"ĐỌC nguồn và phản hồi (GET)"| API
+  TL ==>|"GHI duy nhất: gợi ý, sự kiện"| HG
+  API --- FB
+  JOBQ -.->|"Hermes tự lấy việc (kéo)"| TL
+  HM <-->|"gọi mô hình"| CL
+  CTRL -.->|"dừng khẩn cấp"| HM
+  LE -.->|"bản vá kỹ năng → PR → chủ dự án duyệt → đo → phiên bản mới"| ND
+
+  classDef hm fill:#f3ecfb,stroke:#6b3fa0,color:#222;
+  classDef nm fill:#eaf1fb,stroke:#14437F,color:#222;
+  classDef warn fill:#fff4e0,stroke:#b26a00,color:#222;
+  classDef ok fill:#e8f6ec,stroke:#1d7a3a,color:#222;
+  class UI,BD,LE,TL hm;
+  class API,DATA,PIPE,TAB,STU,JOBQ nm;
+  class CTRL warn;
+  class HG,REAL,FB,GOLD ok;
