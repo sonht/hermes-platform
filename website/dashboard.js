@@ -20,7 +20,7 @@ async function load(){
       const td=document.createElement('td');td.textContent=value;tr.append(td)
     }tbody.append(tr)
   }
-  await Promise.all([loadReports(),loadFaqCandidates()]);
+  await Promise.all([loadReports(),loadFaqCandidates(),loadFaqArticles()]);
 }
 async function loadReports(){
   const r=await fetch('/api/admin/reports',{credentials:'same-origin',cache:'no-store'});
@@ -70,3 +70,36 @@ async function loadFaqCandidates(){
     }tbody.append(tr)
   }
 }
+
+async function loadFaqArticles(){
+  const r=await fetch('/api/admin/faq/articles',{credentials:'same-origin',cache:'no-store'});
+  if(!r.ok)return;
+  const body=await r.json(),tbody=document.getElementById('faq-articles');tbody.replaceChildren();
+  for(const item of body.rows){
+    const tr=document.createElement('tr');
+    for(const value of [item.app,item.question,item.answer,item.status]){
+      const td=document.createElement('td');td.textContent=value;tr.append(td)
+    }
+    const td=document.createElement('td'),button=document.createElement('button');
+    const publish=item.status!=='published';button.textContent=publish?'Duyệt xuất bản':'Gỡ xuất bản';
+    button.addEventListener('click',async()=>{
+      if(!confirm(publish?'Xác nhận xuất bản câu trả lời đã kiểm chứng?':'Gỡ FAQ khỏi công khai?'))return;
+      button.disabled=true;
+      try{
+        const r=await fetch('/api/admin/faq/publish',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:item.id,publish})});
+        if(!r.ok)throw Error('Không thay đổi được trạng thái');
+        await loadFaqArticles();
+      }catch(e){alert(e.message)}finally{button.disabled=false}
+    });td.append(button);tr.append(td);tbody.append(tr)
+  }
+}
+document.getElementById('faq-form').addEventListener('submit',async e=>{
+  e.preventDefault();const msg=document.getElementById('faq-message');msg.textContent='';
+  const payload={app:document.getElementById('faq-app').value.trim(),question:document.getElementById('faq-question').value.trim(),answer:document.getElementById('faq-answer').value.trim()};
+  try{
+    const r=await fetch('/api/admin/faq/draft',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(!r.ok)throw Error('Không lưu được bản nháp. Kiểm tra ứng dụng và nội dung.');
+    msg.textContent='Đã lưu bản nháp, cần duyệt trước khi xuất bản.';
+    document.getElementById('faq-answer').value='';await loadFaqArticles();
+  }catch(err){msg.textContent=err.message}
+});
