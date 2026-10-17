@@ -19,10 +19,11 @@ Dữ liệu đọc từ NMPRP, Hermes xử lý, kết quả hiển thị lại t
 
 | Vấn đề (chủ dự án nêu) | Bằng chứng |
 |---|---|
-| Tốn kém | Bước A2 gọi mô hình một lần cho mỗi cặp (PL2, nút), mỗi lần gửi lại toàn bộ prompt. Lượt thử 6 Nội tiết: 543 tác vụ, A2 = 388 lời gọi. Mã nguồn không dùng prompt caching. (`BAN_GIAO_CHUYEN_AGENT_KHAC_2026-10-16.md` mục 7) |
-| Chậm | Mỗi lần bấm "Chạy tiếp" tối đa 3 lời gọi; chạy hết phải để tab mở. Bộ chạy nền phía máy chủ chưa làm. |
+| Tốn kém | Đến v1.100.218: A2 gọi mô hình mỗi cặp (PL2, nút), không prompt caching (388 lời gọi cho chương 6). **Đã xử lý một phần ở v1.100.219–.225** theo `CPN_AI_MO_TA_DU_AN_CHO_HERMES_AGENT.md`: prompt caching; gom A2 theo PL2 (mặc định tắt, **chất lượng chưa đo**; ≈388 → ≈130 lời gọi); chạy song song. Chưa kiểm chứng trên máy chủ. |
+| Chậm | Đến v1.100.218: tối đa 3 lời gọi mỗi lần bấm. Từ v1.100.219: song song (≈6 lời gọi), "Chạy hết" thử lại tối đa 3 lần với lỗi tạm. Vẫn chạy từ tab trình duyệt; bộ chạy nền phía máy chủ chưa có. |
 | Chưa hoàn chỉnh | Lượt `run_53b4c8…`: A3 hỏng 2/126 tác vụ do model trả JSON hợp lệ kèm chữ thừa (`Extra data`), `_parse_json_chat` (`cpn_ai_worker.py:234`) không xử lý; luật fail-closed chặn A4, A5, A6. 0 họ, 89 xung đột chưa giải. |
-| Độ chính xác thấp | **Chưa đo được**: bàn giao 12/10 ghi 0 nhãn vàng xác nhận, benchmark trả `NOT_EVALUABLE`. Con số này cần kiểm lại. |
+| Độ chính xác thấp | **Chưa đo được**: mô tả ngày 17/10 vẫn ghi 0 nhãn vàng, mọi chỉ số chính xác là `NOT_EVALUABLE`. |
+| **Truy hồi yếu (mắt xích yếu nhất)** | Chương 6, lượt `run_60a0ac27…`: A2 mới làm 89/392 cặp; điểm truy hồi trung bình 0,05 (tối đa 0,18); 321/392 dòng ở tầng dự phòng; **4 PL2 không có ứng viên** (6.71, 6.107, 6.111, 6.120). A2 chỉ thẩm định những cặp truy hồi đưa ra, nên nếu nút đúng không nằm trong danh sách thì A2 không sửa được. |
 
 ## 3. Ràng buộc từ NMPRP (Hermes phải giữ nguyên)
 
@@ -69,6 +70,8 @@ Mỗi dự án một profile Hermes riêng; không để hai tiến trình agent
 - Tiêu chí đạt: một lượt cho chương thí điểm chạy tới hết không cần tab; lỗi từng tác vụ không chặn các tác vụ khác; có báo cáo chi phí.
 
 ### Giai đoạn C thí điểm: Hermes xử lý theo nút, chế độ shadow, một chương
+- **Ưu tiên thí điểm (cập nhật 17/10): "truy hồi có tác tử"** cho các PL2 không có ứng viên hoặc ở tầng dự phòng: Hermes duyệt và tìm trong Khung cây (774 nút) để đề xuất nút ứng viên, thay vì chỉ thẩm định danh sách cố định. Bước thí điểm đầu **không cần sửa NMPRP**: Hermes đọc tệp xuất Excel và hai tệp nạp (Khung, PL2), trả tệp gợi ý cho chuyên gia xem.
+- Ràng buộc bản quyền: Khung không chứa mã CPT và mã CPT **không được phát ra API ngoài** (AMA). Hermes không đưa mã CPT vào prompt, bộ nhớ hay log.
 - Hermes xử lý mỗi nút: lấy ứng viên PL2/PL1, gọi bộ so khớp tất định của NMPRP như công cụ, gom mọi ứng viên của một PL2 vào một lần, dùng skill thay cho prompt lặp, tự kiểm lược đồ và tự sửa.
 - **Cần ngoại lệ có kiểm soát từ chủ dự án** (phá "Cách C không khuyến nghị" và ràng buộc 2 ở mục 3): thêm một endpoint hẹp ở NMPRP để nhận đề xuất từ Hermes, mọi đề xuất đi qua `validate_proposal` và `cpn_ai_store` như agent trong nhà; không đường ghi tắt vào bảng nguồn.
 - Chế độ shadow: đề xuất của Hermes chỉ được so với nhãn vàng và với dây chuyền hiện tại, chưa hiện cho người duyệt.
