@@ -104,6 +104,14 @@ class WebsiteIntegrationTests(unittest.TestCase):
                 self.assertEqual(json.loads(response.read())["rows"][0]["count"], 1)
                 conn.close()
 
+    def test_faq_candidates_requires_auth(self):
+        conn = HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
+        conn.request("GET", "/api/admin/faq/candidates")
+        response = conn.getresponse()
+        self.assertEqual(response.status, 401)
+        response.read()
+        conn.close()
+
     def test_report_triage_requires_auth(self):
         conn = HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
         conn.request("GET", "/api/admin/reports")
