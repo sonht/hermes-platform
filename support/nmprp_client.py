@@ -1,0 +1,131 @@
+"""Read-only client for the NMPRP (dm.kcb.vn) API, for Hermes pilot jobs.
+
+Design rules (see docs/NMPRP_HERMES_API_ACCESS.md):
+- Only GET requests after login; one POST allowed: /admin/auth/login.
+- Path allowlist; everything else is refused BEFORE any network call.
+- CPT codes are AMA-copyrighted and must never reach a model, memory or log:
+  /admin/cpt-tree/khung/ma-cpt and review kind=cpt are refused, and the keys listed in
+  CPT_KEYS are removed from every response (defensive; NMPRP is the source of truth).
+- Credentials come from the environment; the session token lives in memory only.
+- Errors name the path and HTTP status, never a body, token or password.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import urllib.error
+import urllib.parse
+import urllib.request
+
+LOGIN_PATH = "/admin/auth/login"
+
+# (regex for the path, allowed values for the `kind` query parameter or None when unused)
+_ALLOWED_GET = (
+    (re.compile(r"^/admin/cpt-tree/khung$"), None),
+    (re.compile(r"^/admin/cpn-ai/runs$"), None),
+    (re.compile(r"^/admin/cpn-ai/runs/[A-Za-z0-9_\-]+/(tien-do|candidates|conflicts|families|qa)$"), None),
+    (re.compile(r"^/review/search$"), {"pl1", "pl3"}),
+    (re.compile(r"^/review/chapters$"), {"pl1", "pl3"}),
+    (re.compile(r"^/review/map$"), {"pl1"}),
+)
+_BLOCKED_PATH_PARTS = ("/ma-cpt",)
+
+# Keys that carry CPT codes or code ranges; removed from every response.
+CPT_KEYS = frozenset({"dai_ma", "ma_cpt", "cpt_code", "cpt_codes", "cpt_range"})
+
+
+class NmprpError(RuntimeError):
+    """Raised for refused requests and HTTP/auth failures (never contains secrets)."""
+
+
+def strip_cpt(obj):
+    """Return a copy of a JSON-like value without CPT_KEYS at any depth."""
+    if isinstance(obj, dict):
+        return {k: strip_cpt(v) for k, v in obj.items() if k not in CPT_KEYS}
+    if isinstance(obj, list):
+        return [strip_cpt(v) for v in obj]
+    return obj
+
+
+def check_allowed(path: str, query: dict | None = None) -> None:
+    """Raise NmprpError unless (path, query) is an allowed read-only request."""
+    if not isinstance(path, str) or not path.startswith("/") or ".." in path or "//" in path:
+        raise NmprpError("Refused: malformed path")
+    if any(part in path for part in _BLOCKED_PATH_PARTS):
+        raise NmprpError(f"Refused: path is blocked (CPT content): {path}")
+    for rx, kinds in _ALLOWED_GET:
+        if rx.match(path):
+            if kinds is not None:
+                kind = str((query or {}).get("kind", "")).lower()
+                if kind not in kinds:
+                    raise NmprpError(f"Refused: kind={kind!r} not allowed for {path}")
+            return
+    raise NmprpError(f"Refused: path not on the allowlist: {path}")
+
+
+class NmprpClient:
+    def __init__(self, base_url=None, username=None, password=None, timeout=30, opener=None):
+        self.base_url = (base_url or os.environ.get("NMPRP_BASE_URL", "")).rstrip("/")
+        self._username = username or os.environ.get("NMPRP_SERVICE_USER", "")
+        self._password = password or os.environ.get("NMPRP_SERVICE_PASSWORD", "")
+        self.timeout = timeout
+        self._opener = opener or urllib.request.build_opener()
+        self._token = None
+        if not (self.base_url and self._username and self._password):
+            raise NmprpError("Missing NMPRP_BASE_URL / NMPRP_SERVICE_USER / NMPRP_SERVICE_PASSWORD")
+
+    def __repr__(self):  # never print credentials
+        return f"NmprpClient(base_url={self.base_url!r})"
+
+    def _open(self, req, label):
+        try:
+            with self._opener.open(req, timeout=self.timeout) as r:
+                return json.loads(r.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            raise NmprpError(f"{label}: HTTP {e.code}") from None
+        except (urllib.error.URLError, TimeoutError, ValueError) as e:
+            raise NmprpError(f"{label}: {type(e).__name__}") from None
+
+    def _login(self):
+        body = json.dumps({"username": self._username, "password": self._password}).encode()
+        req = urllib.request.Request(self.base_url + LOGIN_PATH, data=body, method="POST",
+                                     headers={"Content-Type": "application/json"})
+        data = self._open(req, "login")
+        token = data.get("token") if isinstance(data, dict) else None
+        if not token:
+            raise NmprpError("login: no token in response")
+        self._token = token
+
+    def get(self, path: str, **query):
+        """GET an allowlisted path; returns the parsed JSON with CPT keys stripped."""
+        check_allowed(path, query)
+        qs = urllib.parse.urlencode({k: v for k, v in query.items() if v not in (None, "")})
+        url = self.base_url + path + (("?" + qs) if qs else "")
+        for attempt in (1, 2):
+            if not self._token:
+                self._login()
+            req = urllib.request.Request(url, method="GET",
+                                         headers={"Authorization": "Bearer " + self._token})
+            try:
+                return strip_cpt(self._open(req, f"GET {path}"))
+            except NmprpError as e:
+                if "HTTP 401" in str(e) and attempt == 1:
+                    self._token = None   # session expired: log in once more
+                    continue
+                raise
+        raise NmprpError(f"GET {path}: unauthorized")
+
+    # Convenience readers used by the pilot job -------------------------------------------
+    def khung(self):
+        return self.get("/admin/cpt-tree/khung")
+
+    def candidates(self, run_id, pl2_code="", **kw):
+        return self.get(f"/admin/cpn-ai/runs/{run_id}/candidates", pl2_code=pl2_code,
+                        kem_ten=1, tat_ca=1, **kw)
+
+    def search_pl2(self, q, limit=40):
+        return self.get("/review/search", kind="pl3", q=q, limit=limit)   # API still names PL2 "pl3"
+
+    def pl2_pl1_map(self, code):
+        return self.get("/review/map", kind="pl1", code=code)
