@@ -34,6 +34,7 @@ NMPRP (dm.kcb.vn) chuẩn hoá danh mục kỹ thuật khám chữa bệnh của
 - `PENDING_EXPERT_REVIEW`: đã chuyển chuyên gia, đang chờ. Tương ứng `PENDING` của NMPRP.
 - `DISPUTED`: người duyệt bất đồng; giữ nguyên cho đến khi người có thẩm quyền quyết.
 - `RULE_CANDIDATE`: bài học có từ 2 ca có nguồn; chưa phải quy tắc, chỉ là giả thuyết.
+Nhãn cho phản hồi của người duyệt (cũng là nhãn HA): `EXPERT_FEEDBACK` (ý kiến thẩm định), `VERIFIED_KNOWLEDGE` (đã kiểm tra lại: từ 2 ca có nguồn hoặc người thứ hai, kèm phản chứng), `GOLD_STANDARD` (chỉ do quy trình nhãn vàng của NMPRP gán độc lập; không lấy từ gợi ý của Hermes đã được chấp nhận).
 Nhãn HA không thay đổi hợp đồng NMPRP và không làm thay đổi `CHO_XEM`.
 
 ## Dạng một gợi ý

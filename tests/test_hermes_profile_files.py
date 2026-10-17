@@ -68,6 +68,8 @@ class ProfileFilesTest(unittest.TestCase):
                   "NO_SAFE_MATCH", "PENDING_EXPERT_REVIEW", "DISPUTED", "RULE_CANDIDATE"):
             self.assertIn(s, a)
         self.assertIn("KHÔNG ghi vào trường trạng thái của NMPRP", a)
+        for s2 in ("EXPERT_FEEDBACK", "VERIFIED_KNOWLEDGE", "GOLD_STANDARD"):
+            self.assertIn(s2, a)
         self.assertIn("CHO_XEM", a)
 
     def test_brain_dump_has_32_answers_and_owner_gate(self):
