@@ -22,6 +22,7 @@ from support.public_inference import answer as public_ai_answer
 from support.intelligence import record as record_feedback, summary as feedback_summary, recent as feedback_recent, set_status as feedback_set_status
 from support.dashboard_auth import login as admin_login, valid as admin_valid, COOKIE as ADMIN_COOKIE
 from support.faq_candidates import candidates as faq_candidates
+from support.faq_studio import list_articles, save_draft, set_publication
 
 _public_lock = threading.Lock()
 _public_requests = defaultdict(deque)
@@ -53,6 +54,36 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_json(200, {"rows": feedback_summary(db)})
             except OSError:
                 self.send_json(503, {"error": "Không đọc được dữ liệu."})
+            return
+        if path == "/api/public/faq":
+            # Only explicitly published, app-scoped content is visible publicly.
+            from urllib.parse import parse_qs
+            app = parse_qs(urlsplit(self.path).query).get("app", [""])[0]
+            allowed = set(os.environ.get("HERMES_FEEDBACK_APPS", "").split(","))
+            if app not in allowed:
+                self.send_json(400, {"error": "Ứng dụng không hợp lệ."})
+                return
+            db = os.environ.get("HERMES_FEEDBACK_DB", "")
+            if not db:
+                self.send_json(200, {"rows": []})
+                return
+            try:
+                self.send_json(200, {"rows": list_articles(db, app=app, published_only=True)})
+            except OSError:
+                self.send_json(503, {"error": "Chưa đọc được FAQ."})
+            return
+        if path == "/api/admin/faq/articles":
+            if not admin_valid(self.headers.get("Cookie", "")):
+                self.send_json(401, {"error": "Cần đăng nhập quản trị."})
+                return
+            db = os.environ.get("HERMES_FEEDBACK_DB", "")
+            if not db:
+                self.send_json(503, {"error": "Chưa cấu hình dữ liệu."})
+                return
+            try:
+                self.send_json(200, {"rows": list_articles(db)})
+            except OSError:
+                self.send_json(503, {"error": "Không đọc được FAQ."})
             return
         if path == "/api/admin/faq/candidates":
             if not admin_valid(self.headers.get("Cookie", "")):
@@ -89,6 +120,8 @@ class Handler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
+        if self.path in ("/api/admin/faq/draft", "/api/admin/faq/publish"):
+            return self.handle_faq_mutation()
         if self.path == "/api/admin/report/status":
             return self.handle_report_status()
         if self.path == "/api/admin/login":
@@ -117,6 +150,39 @@ class Handler(SimpleHTTPRequestHandler):
             finally:
                 _public_slots.release()
         return self.handle_chat(public=False)
+
+    def handle_faq_mutation(self):
+        if not admin_valid(self.headers.get("Cookie", "")):
+            self.send_json(401, {"error": "Cần đăng nhập quản trị."})
+            return
+        if self.headers.get("Origin", "") != "https://" + self.headers.get("Host", ""):
+            self.send_json(403, {"error": "Nguồn yêu cầu không hợp lệ."})
+            return
+        if self.headers.get("Content-Type", "").split(";")[0].strip() != "application/json":
+            self.send_json(415, {"error": "Chỉ hỗ trợ JSON."})
+            return
+        db = os.environ.get("HERMES_FEEDBACK_DB", "")
+        if not db:
+            self.send_json(503, {"error": "Chưa cấu hình dữ liệu."})
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if not 1 <= length <= 4096:
+                raise ValueError("Invalid length")
+            payload = json.loads(self.rfile.read(length))
+            if self.path.endswith("/draft"):
+                allowed = set(os.environ.get("HERMES_FEEDBACK_APPS", "").split(","))
+                if payload["app"] not in allowed:
+                    raise ValueError("Invalid app")
+                result = {"id": save_draft(db, payload["app"], payload["question"], payload["answer"])}
+                self.send_json(201, result)
+            else:
+                updated = set_publication(db, payload["id"], payload["publish"])
+                self.send_json(200 if updated else 404, {"updated": updated})
+        except (ValueError, TypeError, KeyError, json.JSONDecodeError):
+            self.send_json(400, {"error": "Nội dung FAQ không hợp lệ."})
+        except OSError:
+            self.send_json(503, {"error": "Không lưu được FAQ."})
 
     def handle_report_status(self):
         if not admin_valid(self.headers.get("Cookie", "")):
