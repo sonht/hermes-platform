@@ -7,6 +7,7 @@ Format follows Keep a Changelog; versions follow Semantic Versioning.
 ## [Unreleased]
 
 ### Added
+- Profile `nmprp-mapping` installed on Rocky 2026-10-18 (empty profile via `hermes profile create`, knowledge files copied as user `hermes`, gateway stopped, no cron); verified steps recorded in `hermes/profiles/nmprp-mapping/README.md`.
 - Read-only NMPRP API client for Hermes pilot (allowlist, CPT-code stripping, offline tests) and access runbook (`docs/NMPRP_HERMES_API_ACCESS.md`). Not connected to dm.kcb.vn yet.
 - Knowledge layer for the NMPRP Hermes profile, not installed on Rocky: `SOUL.md`, `AGENTS.md`, memory seeds and four skills under `hermes/profiles/nmprp-mapping/`; project documents `docs/NMPRP_HERMES_BRAIN_DUMP.md` and `docs/NMPRP_HERMES_KIEN_TRUC.md` (architecture diagram, two-way feedback loop); originals kept in `docs/lich-su/`.
 - Repository foundation and production rollout planning.
