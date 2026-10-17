@@ -19,7 +19,8 @@ from support.user_journey_builder import build_journey
 from support.hermes_gateway import ask_hermes
 from support.code_aware import public_answer, retrieve
 from support.public_inference import answer as public_ai_answer
-from support.intelligence import record as record_feedback
+from support.intelligence import record as record_feedback, summary as feedback_summary
+from support.dashboard_auth import login as admin_login, valid as admin_valid, COOKIE as ADMIN_COOKIE
 
 _public_lock = threading.Lock()
 _public_requests = defaultdict(deque)
@@ -39,12 +40,30 @@ class Handler(SimpleHTTPRequestHandler):
             self.path = "/web.html"
         elif path in ("/", ""):
             self.path = "/home.html"
+        if path == "/api/admin/summary":
+            if not admin_valid(self.headers.get("Cookie", "")):
+                self.send_json(401, {"error": "Cần đăng nhập quản trị."})
+                return
+            db = os.environ.get("HERMES_FEEDBACK_DB", "")
+            if not db:
+                self.send_json(503, {"error": "Chưa cấu hình dữ liệu."})
+                return
+            try:
+                self.send_json(200, {"rows": feedback_summary(db)})
+            except OSError:
+                self.send_json(503, {"error": "Không đọc được dữ liệu."})
+            return
+        if path == "/api/admin/session":
+            self.send_json(200, {"authenticated": admin_valid(self.headers.get("Cookie", ""))})
+            return
         if self.path.startswith("/api/"):
             self.send_error(404)
             return
         return super().do_GET()
 
     def do_POST(self):
+        if self.path == "/api/admin/login":
+            return self.handle_admin_login()
         if self.path not in ("/api/chat", "/api/public/chat", "/api/public/feedback"):
             self.send_error(404)
             return
@@ -69,6 +88,42 @@ class Handler(SimpleHTTPRequestHandler):
             finally:
                 _public_slots.release()
         return self.handle_chat(public=False)
+
+    def handle_admin_login(self):
+        # Login rate limiting at origin is a temporary safety net; edge limits
+        # and an identity provider are required before production rollout.
+        peer = self.client_address[0]
+        now = time.monotonic()
+        with _public_lock:
+            times = _public_requests["admin-login:" + peer]
+            while times and now - times[0] > 300:
+                times.popleft()
+            if len(times) >= 5:
+                self.send_json(429, {"error": "Thử lại sau."})
+                return
+            times.append(now)
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if not 1 <= length <= 512:
+                raise ValueError("Invalid length")
+            payload = json.loads(self.rfile.read(length))
+            token = admin_login(payload.get("password"))
+            if not token:
+                self.send_json(401, {"error": "Thông tin đăng nhập không đúng."})
+                return
+            data = json.dumps({"authenticated": True}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Set-Cookie", f"{ADMIN_COOKIE}={token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=3600")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            self.wfile.write(data)
+        except (ValueError, TypeError, AttributeError, json.JSONDecodeError):
+            self.send_json(400, {"error": "Yêu cầu không hợp lệ."})
+        except RuntimeError:
+            self.send_json(503, {"error": "Chưa cấu hình xác thực quản trị."})
 
     def handle_feedback(self):
         # Opt-in staging endpoint; public feedback is disabled until edge anti-abuse
