@@ -20,6 +20,32 @@ async function load(){
       const td=document.createElement('td');td.textContent=value;tr.append(td)
     }tbody.append(tr)
   }
+  await loadReports();
+}
+async function loadReports(){
+  const r=await fetch('/api/admin/reports',{credentials:'same-origin',cache:'no-store'});
+  if(!r.ok)return;
+  const body=await r.json(),tbody=document.getElementById('reports');tbody.replaceChildren();
+  for(const item of body.rows){
+    const tr=document.createElement('tr');
+    for(const value of [item.day,item.app,labels[item.kind]||item.kind,item.summary,item.status]){
+      const td=document.createElement('td');td.textContent=value;tr.append(td)
+    }
+    const td=document.createElement('td'),select=document.createElement('select');
+    for(const [value,label] of [['new','Mới'],['reviewed','Đã xem'],['resolved','Đã xử lý']]){
+      const option=document.createElement('option');option.value=value;option.textContent=label;select.append(option)
+    }
+    select.value=item.status;
+    select.addEventListener('change',async()=>{
+      select.disabled=true;
+      try{
+        const res=await fetch('/api/admin/report/status',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:item.id,status:select.value})});
+        if(!res.ok)throw Error('Không cập nhật được trạng thái');
+        await loadReports();
+      }catch(err){alert(err.message);select.value=item.status}finally{select.disabled=false}
+    });
+    td.append(select);tr.append(td);tbody.append(tr)
+  }
 }
 document.getElementById('auth').addEventListener('submit',async e=>{
   e.preventDefault();error.textContent='';
