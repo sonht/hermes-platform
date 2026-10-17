@@ -71,6 +71,39 @@ class WebsiteIntegrationTests(unittest.TestCase):
         self.assertIn("Procedure.jsx", body["answer"])
         self.assertIn("chưa phải hướng dẫn", body["answer"])
 
+    def test_dashboard_summary_requires_login(self):
+        conn = HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
+        conn.request("GET", "/api/admin/summary")
+        response = conn.getresponse()
+        self.assertEqual(response.status, 401)
+        response.read()
+        conn.close()
+
+    def test_dashboard_login_and_summary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, {
+                "HERMES_DASHBOARD_PASSWORD": "strong-test-password-123",
+                "HERMES_DASHBOARD_SESSION_KEY": "test-key-with-at-least-32-characters-123456",
+                "HERMES_FEEDBACK_DB": str(Path(tmp) / "feedback.db"),
+            }):
+                from support.intelligence import record
+                record(os.environ["HERMES_FEEDBACK_DB"], "nmprp", "faq", "Hướng dẫn tìm kỹ thuật theo mã CPT")
+                conn = HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
+                conn.request("POST", "/api/admin/login",
+                    json.dumps({"password": "strong-test-password-123"}),
+                    {"Content-Type": "application/json"})
+                response = conn.getresponse()
+                self.assertEqual(response.status, 200)
+                cookie = response.getheader("Set-Cookie").split(";", 1)[0]
+                response.read()
+                conn.close()
+                conn = HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
+                conn.request("GET", "/api/admin/summary", headers={"Cookie": cookie})
+                response = conn.getresponse()
+                self.assertEqual(response.status, 200)
+                self.assertEqual(json.loads(response.read())["rows"][0]["count"], 1)
+                conn.close()
+
     def test_application_routes(self):
         for path, marker in (("/", "Hermes Platform"), ("/chat", "Cổng hỗ trợ"),
                              ("/dashboard", "Support Intelligence"), ("/web", "Website Support Widget")):
