@@ -2,8 +2,9 @@
 
 **Trạng thái: client và tài liệu đã viết, CHƯA cấp tài khoản, CHƯA chạy với dm.kcb.vn.**
 
+
 ## Phạm vi
-Giai đoạn thí điểm chỉ **ĐỌC**. Code: `support/nmprp_client.py`, test: `tests/test_nmprp_client.py` (offline, máy chủ giả).
+Giai đoạn thí điểm: **ĐỌC** cộng **HAI đường ghi hẹp** (`POST /admin/hermes/goi-y`, `POST /admin/hermes/su-kien`, vào bảng riêng `hermes_*` của NMPRP, gợi ý luôn CHƯA DUYỆT). Mọi POST khác bị từ chối trước khi gọi mạng. Code: `support/nmprp_client.py`, test: `tests/test_nmprp_client.py` (offline, máy chủ giả).
 
 ## Tài khoản dịch vụ (việc của chủ dự án trên NMPRP)
 - Tạo một tài khoản riêng cho Hermes, cấp tác vụ **`studio_cpt`**, **không** phải admin.
@@ -32,3 +33,12 @@ Mặc định (công tắc tắt):
 - Đường mạng từ container Hermes tới NMPRP (địa chỉ nội bộ hay qua `dm.kcb.vn`); client nhận `NMPRP_BASE_URL`.
 - Tên trường thật của từng phản hồi; client không giả định, chỉ xoá khoá CPT.
 - Hạn token phiên và giới hạn tốc độ đăng nhập (`limiter_dep(auth_login)`) của NMPRP.
+
+## Công tắc AI của NMPRP KHÔNG tự dừng được Hermes (đã xác nhận 17/10/2026)
+Công tắc AI toàn cục của NMPRP chỉ chặn các lời gọi mô hình **bên trong NMPRP** (`ai_client.call_text`). Hermes đã được nối Claude API
+bằng khoá riêng của nó nên tự gọi mô hình, ngoài `call_text`. Hệ quả:
+- Client có `ai_cong_tac_bat()`: đọc `GET /admin/ai/status`, **FAIL-CLOSED** (lỗi, thiếu trường hay giá trị khác `True` đều coi là TẮT).
+  Job của Hermes **phải gọi nó đầu tiên và dừng khi False**. Đây là sự TỰ GIÁC của Hermes, không phải cưỡng chế từ NMPRP.
+- Cưỡng chế thật nằm ở phía Hermes và các khoá: `hermes pause` (dừng khẩn cấp toàn bộ cron, tài liệu Hermes), tạm dừng từng job,
+  vô hiệu hoá tài khoản dịch vụ trên NMPRP (Hermes mất khả năng đọc và ghi), thu hồi hoặc đặt hạn mức cho khoá Claude API của Hermes.
+- Chi phí mô hình của Hermes tính theo khoá của Hermes, tách khỏi NMPRP: đặt hạn mức chi tiêu ở nhà cung cấp.

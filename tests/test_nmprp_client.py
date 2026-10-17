@@ -6,7 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from support.nmprp_client import NmprpClient, NmprpError, check_allowed, strip_cpt
 
 SEEN = []
-STATE = {"expire_once": False}
+STATE = {"expire_once": False, "ai": {"ok": True, "cong_tac": True, "key_masked": "sk-***"}, "ai_code": 200}
 
 
 class H(BaseHTTPRequestHandler):
@@ -24,9 +24,12 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):
         n = int(self.headers.get("Content-Length", 0))
         body = json.loads(self.rfile.read(n) or b"{}")
-        SEEN.append(("POST", self.path))
+        SEEN.append(("POST", self.path, self.headers.get("Authorization"), body))
         if self.path == "/admin/auth/login" and body.get("password") == "pw":
             self._send(200, {"ok": True, "token": "tok%d" % len(SEEN)})
+        elif self.path in ("/admin/hermes/goi-y", "/admin/hermes/su-kien") and \
+                (self.headers.get("Authorization") or "").startswith("Bearer tok"):
+            self._send(200, {"ok": True, "da_ghi": len(body.get("items", []))})
         else:
             self._send(401, {"detail": "no"})
 
@@ -37,6 +40,8 @@ class H(BaseHTTPRequestHandler):
             return self._send(401, {"detail": "expired"})
         if not (self.headers.get("Authorization") or "").startswith("Bearer tok"):
             return self._send(401, {"detail": "no"})
+        if self.path.startswith("/admin/ai/status"):
+            return self._send(STATE["ai_code"], STATE["ai"])
         self._send(200, {"ok": True, "nodes": [{"ten": "Noi soi", "dai_ma": "14000 - 14350"}]})
 
 
@@ -54,6 +59,7 @@ class ClientTest(unittest.TestCase):
     def setUp(self):
         SEEN.clear()
         STATE["expire_once"] = False
+        STATE["ai"], STATE["ai_code"] = {"ok": True, "cong_tac": True, "key_masked": "sk-***"}, 200
 
     def client(self, pw="pw"):
         return NmprpClient(self.base, "svc", pw)
@@ -106,6 +112,32 @@ class ClientTest(unittest.TestCase):
         with self.assertRaises(NmprpError):                                  # still allowlist-only
             check_allowed("/admin/cpn-ai/runs/r1/duyet", {}, allow_cpt=True)
         self.assertFalse(self.client().allow_cpt)
+
+    def test_post_goi_y_va_su_kien_di_dung_duong_va_co_the_dang_nhap_lai(self):
+        c = self.client()
+        r = c.post_goi_y([{"pl2_code": "6.100", "branch_key": "A > B", "phien_ban": "s1"}])
+        self.assertEqual(r["da_ghi"], 1)
+        c.post_su_kien("NHIP", "ok")
+        posts = [x for x in SEEN if x[0] == "POST" and x[1].startswith("/admin/hermes/")]
+        self.assertEqual([x[1] for x in posts], ["/admin/hermes/goi-y", "/admin/hermes/su-kien"])
+        self.assertTrue(posts[0][2].startswith("Bearer tok"))
+        self.assertEqual(posts[0][3]["items"][0]["pl2_code"], "6.100")        # mã giữ nguyên văn
+
+    def test_post_ra_ngoai_hai_duong_hep_bi_tu_choi_truoc_khi_goi_mang(self):
+        c = self.client()
+        for path in ("/admin/cpn-ai/runs", "/admin/cpn-ai/candidates/c1/duyet", "/admin/ai/set", "/admin/ai/cong-tac",
+                     "/admin/hermes/goi-y/../x", "/admin/hermes/duyet", "/admin/catalog/amend"):
+            with self.assertRaises(NmprpError, msg=path):
+                c.post(path, {})
+        self.assertEqual(SEEN, [])
+
+    def test_ai_cong_tac_fail_closed(self):
+        c = self.client()
+        self.assertTrue(c.ai_cong_tac_bat())
+        for ai, code in [({"ok": True, "cong_tac": False}, 200), ({"ok": True}, 200), ({"cong_tac": "1"}, 200),
+                         ({"cong_tac": 1}, 200), ({"detail": "x"}, 500), ({"detail": "x"}, 403)]:
+            STATE["ai"], STATE["ai_code"] = ai, code
+            self.assertFalse(self.client().ai_cong_tac_bat(), (ai, code))      # lỗi/thiếu/lạ ⇒ TẮT
 
     def test_missing_config(self):
         with self.assertRaises(NmprpError):

@@ -1,7 +1,8 @@
-"""Read-only client for the NMPRP (dm.kcb.vn) API, for Hermes pilot jobs.
+"""Client for the NMPRP (dm.kcb.vn) API, for Hermes pilot jobs: reads plus TWO narrow writes.
 
 Design rules (see docs/NMPRP_HERMES_API_ACCESS.md):
-- Only GET requests after login; one POST allowed: /admin/auth/login.
+- Only GET requests after login, plus POST to exactly /admin/hermes/goi-y and /admin/hermes/su-kien
+  (unreviewed suggestions into NMPRP's own tables) and /admin/auth/login. Nothing else can be written.
 - Path allowlist; everything else is refused BEFORE any network call.
 - CPT codes are AMA-copyrighted. By DEFAULT they must never reach a model, memory or log:
   /admin/cpt-tree/khung/ma-cpt and review kind=cpt are refused, and the keys listed in
@@ -23,12 +24,17 @@ import urllib.request
 LOGIN_PATH = "/admin/auth/login"
 
 # (regex for the path, allowed values for the `kind` query parameter or None when unused)
+_ALLOWED_POST = (
+    re.compile(r"^/admin/hermes/goi-y$"),
+    re.compile(r"^/admin/hermes/su-kien$"),
+)
 _CPT_GET = (
     (re.compile(r"^/admin/cpt-tree/khung/ma-cpt$"), None),
 )
 _ALLOWED_CPT_KINDS = {"cpt"}
 _ALLOWED_GET = (
     (re.compile(r"^/admin/cpt-tree/khung$"), None),
+    (re.compile(r"^/admin/ai/status$"), None),
     (re.compile(r"^/admin/cpn-ai/runs$"), None),
     (re.compile(r"^/admin/cpn-ai/runs/[A-Za-z0-9_\-]+/(tien-do|candidates|conflicts|families|qa)$"), None),
     (re.compile(r"^/review/search$"), {"pl1", "pl3"}),
@@ -52,6 +58,12 @@ def strip_cpt(obj):
     if isinstance(obj, list):
         return [strip_cpt(v) for v in obj]
     return obj
+
+
+def check_post_allowed(path: str) -> None:
+    """Raise NmprpError unless `path` is one of the two narrow write endpoints."""
+    if not isinstance(path, str) or not any(rx.match(path) for rx in _ALLOWED_POST):
+        raise NmprpError(f"Refused: POST not allowed: {path}")
 
 
 def check_allowed(path: str, query: dict | None = None, allow_cpt: bool = False) -> None:
@@ -127,7 +139,26 @@ class NmprpClient:
                 raise
         raise NmprpError(f"GET {path}: unauthorized")
 
-    # Convenience readers used by the pilot job -------------------------------------------
+    def post(self, path: str, body: dict):
+        """POST JSON to one of the two allowlisted write paths; returns the parsed response."""
+        check_post_allowed(path)
+        data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        for attempt in (1, 2):
+            if not self._token:
+                self._login()
+            req = urllib.request.Request(self.base_url + path, data=data, method="POST",
+                                         headers={"Authorization": "Bearer " + self._token,
+                                                  "Content-Type": "application/json"})
+            try:
+                return self._open(req, f"POST {path}")
+            except NmprpError as e:
+                if "HTTP 401" in str(e) and attempt == 1:
+                    self._token = None
+                    continue
+                raise
+        raise NmprpError(f"POST {path}: unauthorized")
+
+    # Convenience readers/writers used by the pilot job -------------------------------------------
     def khung(self):
         return self.get("/admin/cpt-tree/khung")
 
@@ -140,3 +171,20 @@ class NmprpClient:
 
     def pl2_pl1_map(self, code):
         return self.get("/review/map", kind="pl1", code=code)
+
+    def ai_cong_tac_bat(self) -> bool:
+        """NMPRP's global AI switch. FAIL-CLOSED: any error, missing field or non-True value means OFF.
+
+        The switch only stops model calls made INSIDE NMPRP; Hermes calls its model itself, so the pilot job
+        MUST call this first and stop when it is False."""
+        try:
+            return self.get("/admin/ai/status").get("cong_tac") is True
+        except NmprpError:
+            return False
+
+    def post_goi_y(self, items):
+        """Send a batch (<=200) of UNREVIEWED suggestions; the server forces source and status."""
+        return self.post("/admin/hermes/goi-y", {"items": items})
+
+    def post_su_kien(self, loai, chi_tiet=""):
+        return self.post("/admin/hermes/su-kien", {"loai": loai, "chi_tiet": chi_tiet})
