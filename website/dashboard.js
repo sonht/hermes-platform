@@ -20,7 +20,7 @@ async function load(){
       const td=document.createElement('td');td.textContent=value;tr.append(td)
     }tbody.append(tr)
   }
-  await loadReports();
+  await Promise.all([loadReports(),loadFaqCandidates()]);
 }
 async function loadReports(){
   const r=await fetch('/api/admin/reports',{credentials:'same-origin',cache:'no-store'});
@@ -58,3 +58,15 @@ document.getElementById('auth').addEventListener('submit',async e=>{
   }catch(err){error.textContent=err.message}
 });
 load().catch(()=>{error.textContent='Chưa kết nối được hệ thống thống kê.'});
+
+async function loadFaqCandidates(){
+  const r=await fetch('/api/admin/faq/candidates',{credentials:'same-origin',cache:'no-store'});
+  if(!r.ok)return;
+  const data=await r.json(),tbody=document.getElementById('faq-candidates');tbody.replaceChildren();
+  for(const item of data.rows){
+    const tr=document.createElement('tr');
+    for(const value of [item.app,item.question,item.count,'Chờ biên tập']){
+      const td=document.createElement('td');td.textContent=value;tr.append(td)
+    }tbody.append(tr)
+  }
+}
