@@ -71,6 +71,17 @@ class WebsiteIntegrationTests(unittest.TestCase):
         self.assertIn("Procedure.jsx", body["answer"])
         self.assertIn("chưa phải hướng dẫn", body["answer"])
 
+    def test_application_routes(self):
+        for path, marker in (("/", "Hermes Platform"), ("/chat", "Cổng hỗ trợ"),
+                             ("/dashboard", "Support Intelligence"), ("/web", "Website Support Widget")):
+            conn = HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
+            conn.request("GET", path)
+            response = conn.getresponse()
+            body = response.read().decode("utf-8")
+            self.assertEqual(response.status, 200, path)
+            self.assertIn(marker, body)
+            conn.close()
+
     def test_feedback_disabled_by_default(self):
         status, body = self.feedback({"app": "nmprp", "kind": "bug", "summary": "Không lưu được kỹ thuật"})
         self.assertEqual(status, 404)
