@@ -3,6 +3,7 @@
 No direct Hermes LLM connection yet; never expose an unauthenticated agent.
 """
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlsplit
 from pathlib import Path
 import json
 import hmac
@@ -29,6 +30,15 @@ class Handler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
     def do_GET(self):
+        path = urlsplit(self.path).path
+        if path in ("/chat", "/chat/"):
+            self.path = "/index.html"
+        elif path in ("/dashboard", "/dashboard/"):
+            self.path = "/dashboard.html"
+        elif path in ("/web", "/web/"):
+            self.path = "/web.html"
+        elif path in ("/", ""):
+            self.path = "/home.html"
         if self.path.startswith("/api/"):
             self.send_error(404)
             return
