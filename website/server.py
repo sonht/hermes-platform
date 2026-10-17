@@ -18,6 +18,7 @@ from support.user_journey_builder import build_journey
 from support.hermes_gateway import ask_hermes
 from support.code_aware import public_answer, retrieve
 from support.public_inference import answer as public_ai_answer
+from support.intelligence import record as record_feedback
 
 _public_lock = threading.Lock()
 _public_requests = defaultdict(deque)
@@ -34,10 +35,10 @@ class Handler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
-        if self.path not in ("/api/chat", "/api/public/chat"):
+        if self.path not in ("/api/chat", "/api/public/chat", "/api/public/feedback"):
             self.send_error(404)
             return
-        public = self.path == "/api/public/chat"
+        public = self.path in ("/api/public/chat", "/api/public/feedback")
         if public:
             # The website is proxied only by local Caddy. Ignore untrusted X-Forwarded-For.
             peer = self.client_address[0]
@@ -54,10 +55,38 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_json(503, {"error": "Hệ thống đang bận. Vui lòng thử lại."})
                 return
             try:
-                return self.handle_chat(public=True)
+                return self.handle_feedback() if self.path == "/api/public/feedback" else self.handle_chat(public=True)
             finally:
                 _public_slots.release()
         return self.handle_chat(public=False)
+
+    def handle_feedback(self):
+        # Opt-in staging endpoint; public feedback is disabled until edge anti-abuse
+        # and privacy controls are reviewed and enabled by the operator.
+        if os.environ.get("HERMES_FEEDBACK_ENABLED") != "1":
+            self.send_json(404, {"error": "Chức năng góp ý chưa được kích hoạt."})
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if not 1 <= length <= 2048:
+                raise ValueError("Invalid length")
+            payload = json.loads(self.rfile.read(length))
+            if not isinstance(payload, dict) or set(payload) != {"app", "kind", "summary"}:
+                raise ValueError("Invalid payload")
+            # An application allowlist is mandatory. Browser-supplied app ID
+            # is a routing label, never an authorization credential.
+            allowed = set(os.environ.get("HERMES_FEEDBACK_APPS", "").split(","))
+            if payload["app"] not in allowed:
+                raise ValueError("Unknown application")
+            db = os.environ.get("HERMES_FEEDBACK_DB", "")
+            if not db:
+                raise RuntimeError("Feedback storage not configured")
+            record_feedback(db, payload["app"], payload["kind"], payload["summary"])
+            self.send_json(202, {"message": "Đã tiếp nhận góp ý để xem xét. Cảm ơn anh/chị."})
+        except (ValueError, TypeError, KeyError, json.JSONDecodeError):
+            self.send_json(400, {"error": "Nội dung góp ý không hợp lệ."})
+        except (OSError, RuntimeError):
+            self.send_json(503, {"error": "Chưa thể tiếp nhận góp ý. Vui lòng thử lại sau."})
 
     def send_json(self, status, obj):
         data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
