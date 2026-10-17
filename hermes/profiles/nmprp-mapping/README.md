@@ -1,7 +1,7 @@
-# Profile Hermes "nmprp-mapping" (bộ tệp tri thức, BẢN NHÁP)
+# Profile Hermes "nmprp-mapping" (bộ tệp tri thức)
 
 Trạng thái: **chưa cài lên Rocky, chưa chạy thử**. Đây là phần "State and knowledge" của dự án NMPRP ⇄ Hermes
-(thiết kế: `docs/NMPRP_HERMES_MAPPING_DESIGN.md`).
+(thiết kế: `docs/NMPRP_HERMES_MAPPING_DESIGN.md`; brain dump: `docs/NMPRP_HERMES_BRAIN_DUMP.md`).
 
 | Tệp | Vai trò | Ghi chú đã đối chiếu tài liệu Hermes v0.22.2 |
 |---|---|---|
@@ -9,6 +9,8 @@ Trạng thái: **chưa cài lên Rocky, chưa chạy thử**. Đây là phần "
 | `AGENTS.md` | Bối cảnh dự án | Hermes nạp từ thư mục làm việc; **chưa kiểm chứng** nó được nạp với phiên chạy qua cổng nhắn tin hay Dashboard |
 | `memories/MEMORY.md`, `USER.md` | Sự thật ngắn, quy ước | Giới hạn 2.200 và 1.375 ký tự; các mục cách nhau bằng dòng `§` |
 | `skills/nmprp-retrieval-assist/` | Quy trình truy hồi cho PL2 chưa có ứng viên | Định dạng `SKILL.md` có frontmatter `name`, `description` |
+| `skills/nmprp-clinical-semantics/` | Phân tích ngữ nghĩa, họ, kernel, modifier | Hợp nhất từ gói «Hermes HA Profiles» |
+| `skills/nmprp-qa-governance/` | Kiểm tra độc lập, số đo, điều kiện dừng | Dùng bộ đo `cpn_gold_do.py` của NMPRP |
 | `skills/nmprp-learn-from-review/` | Học từ quyết định người duyệt, chỉ đề xuất | Cổng duyệt ghi skill: tên khoá cấu hình chưa xác minh |
 
 ## Nguyên tắc

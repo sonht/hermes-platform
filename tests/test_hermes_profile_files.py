@@ -4,7 +4,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 ROOT = REPO / "hermes" / "profiles" / "nmprp-mapping"
-DRAFTS = REPO / "hermes" / "drafts"
+DOCS = REPO / "docs"
 LIMIT_MEMORY, LIMIT_USER = 2200, 1375
 
 
@@ -21,7 +21,7 @@ class ProfileFilesTest(unittest.TestCase):
 
     def test_skills_have_frontmatter_matching_directory(self):
         dirs = sorted(p for p in (ROOT / "skills").iterdir() if p.is_dir())
-        self.assertGreaterEqual(len(dirs), 2)
+        self.assertGreaterEqual(len(dirs), 4)
         for d in dirs:
             txt = (d / "SKILL.md").read_text(encoding="utf-8")
             m = re.match(r"^---\nname: ([a-z0-9-]+)\ndescription: (.+)\n---\n", txt)
@@ -36,21 +36,44 @@ class ProfileFilesTest(unittest.TestCase):
             if p.is_file():
                 self.assertIsNone(bad.search(p.read_text(encoding="utf-8")), str(p))
 
-    def test_drafts_have_no_secrets_and_are_not_in_the_installable_profile(self):
+    def test_archive_has_no_secrets(self):
         bad = re.compile(r"(sk-[A-Za-z0-9]{10,}|Bearer\s+[A-Za-z0-9_\-]{20,}|password\s*[:=]\s*\S+|\b\d{5}\b\s*-\s*\d{5}\b)", re.I)
-        files = [p for p in DRAFTS.rglob("*") if p.is_file()]
+        files = [p for p in (DOCS / "lich-su").rglob("*") if p.is_file()]
         self.assertTrue(files)
         for p in files:
             self.assertIsNone(bad.search(p.read_text(encoding="utf-8")), str(p))
-        self.assertFalse(any("drafts" in p.parts for p in ROOT.rglob("*")))        # bản nháp không nằm trong profile sẽ cài
+        self.assertFalse(any("lich-su" in p.parts for p in ROOT.rglob("*")))
 
-    def test_reconciliation_keeps_the_pl3_warning(self):
-        doc = (REPO / "docs" / "NMPRP_HA_PROFILES_V1_RECONCILIATION.md").read_text(encoding="utf-8")
-        self.assertIn("PL3 là tên cũ của PL2", doc)
-        self.assertIn("AWAITING OWNER APPROVAL", doc)
-        wrong = (DRAFTS / "Hermes_HA_Profiles_v1" / "profiles" / "nmprp" / "SOUL.md").read_text(encoding="utf-8")
-        self.assertNotIn("PL3 thuộc kiến trúc rộng hơn", wrong)  # đã sửa theo chủ dự án
-        self.assertIn("PL3 là TÊN CŨ của PL2", wrong)
+    def _live_docs(self):
+        return [p for p in ROOT.rglob("*.md")] + [DOCS / "NMPRP_HERMES_BRAIN_DUMP.md"]
+
+    def test_live_docs_use_only_pl1_and_pl2(self):
+        allowed = re.compile(r"kind=pl3|PL3-PROC-", re.I)
+        for p in self._live_docs():
+            txt = allowed.sub("", p.read_text(encoding="utf-8"))
+            self.assertIsNone(re.search(r"pl3", txt, re.I), str(p))
+
+    def test_pl1_is_never_called_price_or_history(self):
+        for p in self._live_docs():
+            txt = p.read_text(encoding="utf-8")
+            self.assertNotIn("lịch sử/giá", txt, str(p))
+            self.assertNotIn("liên hệ lịch sử", txt, str(p))
+        a = read("AGENTS.md")
+        self.assertIn("01/01/2028", a)
+        self.assertIn("không phải danh mục giá", a)
+
+    def test_ha_status_labels_live_in_agents_and_stay_out_of_nmprp_fields(self):
+        a = read("AGENTS.md")
+        for s in ("HIGH_CONFIDENCE_PROPOSAL", "REVIEW_RECOMMENDED", "EXPERT_REQUIRED", "UNRESOLVED",
+                  "NO_SAFE_MATCH", "PENDING_EXPERT_REVIEW", "DISPUTED", "RULE_CANDIDATE"):
+            self.assertIn(s, a)
+        self.assertIn("KHÔNG ghi vào trường trạng thái của NMPRP", a)
+        self.assertIn("CHO_XEM", a)
+
+    def test_brain_dump_has_32_answers_and_owner_gate(self):
+        txt = (DOCS / "NMPRP_HERMES_BRAIN_DUMP.md").read_text(encoding="utf-8")
+        self.assertEqual(len(re.findall(r"^###\s+(?:\d+\.|★)?", txt, re.M)), 32)
+        self.assertIn("chờ chủ dự án duyệt", txt)
 
     def test_soul_keeps_the_hard_rules(self):
         soul = read("SOUL.md")
