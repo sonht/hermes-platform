@@ -9,6 +9,6 @@ Format follows Keep a Changelog; versions follow Semantic Versioning.
 ### Added
 - Repository foundation and production rollout planning.
 - Engineering versioning, change-management and backup/recovery policies.
-- Prepared (NOT deployed): Hermes Agent Dashboard under `/agent` on hermes.kcb.vn via Caddy `X-Forwarded-Prefix` — Caddy template, smoke script and runbook.
+- Hermes Agent Dashboard under `/agent` on hermes.kcb.vn via Caddy `X-Forwarded-Prefix`, Tailscale-only (deployed on Rocky 2026-10-17) — Caddy block, smoke and authenticated acceptance scripts, runbook with results and rollback.
 
 No application release has been published yet.

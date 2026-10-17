@@ -1,18 +1,20 @@
-# Template for /etc/caddy/conf.d/hermes-website.caddy (block hermes.kcb.vn only).
+# Block hermes.kcb.vn as deployed to /etc/caddy/conf.d/hermes-website.caddy on 2026-10-17.
 # Upstream Hermes Agent v0.22.2 (d923a5eb) supports sub-path mounting through the
 # X-Forwarded-Prefix header; the backend rewrites index.html, cookies, redirects.
-# Apply ONLY after the approval steps in docs/HERMES_AGENT_PATH_ROUTING.md.
-# Do not copy backups (*.bak) into a directory matched by the Caddy import glob.
+# See docs/HERMES_AGENT_PATH_ROUTING.md before changing the access rule.
+# Keep backups OUTSIDE /etc/caddy/conf.d (import glob *.caddy), e.g. /root/caddy-backups.
 hermes.kcb.vn {
 	encode zstd gzip
+	# Access log (Caddy redacts Cookie/Authorization by default) to verify the /agent IP rule.
+	log
 
 	redir /agent /agent/ 308
 
+	# Hermes Agent Dashboard: Tailscale tailnet only (100.64.0.0/10, fd7a:115c:a1e0::/48).
+	# Public traffic reaches Caddy via NAT 10.11.1.213 without client IP, so it is always denied.
 	handle_path /agent/* {
-		# Defense in depth on top of the dashboard auth gate. Choose ONE access policy
-		# (see docs) and replace the placeholder before applying.
-		# @denied not remote_ip REPLACE_WITH_ALLOWED_CIDR
-		# respond @denied 403
+		@agent_not_tailnet not remote_ip 100.64.0.0/10 fd7a:115c:a1e0::/48
+		respond @agent_not_tailnet 403
 		reverse_proxy 127.0.0.1:19119 {
 			header_up X-Forwarded-Prefix /agent
 		}
