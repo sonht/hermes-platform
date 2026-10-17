@@ -22,6 +22,14 @@ Các bước cụ thể (đường dẫn thư mục profile, cách sao chép t�
 Phiên cài phải: (1) đọc `hermes profile --help` trên Rocky trước, (2) sao lưu theo `docs/BACKUP_RECOVERY.md`,
 (3) không đụng profile mặc định đang chạy gateway và Dashboard, (4) báo lại từng bước đã kiểm chứng.
 
+## Điều đã đối chiếu tài liệu Hermes v0.22.2 về vận hành
+- **Cron mặc định chạy tách khỏi mọi thư mục dự án: KHÔNG nạp `AGENTS.md`** (chỉ nạp khi job có `--workdir`). Vì vậy job thí điểm phải
+  (a) gắn skill `nmprp-retrieval-assist` vào job, (b) đặt `--workdir` trỏ tới thư mục có `AGENTS.md`, hoặc dựa vào `SOUL.md` cho các luật cứng.
+- **Cron do cổng (gateway) của profile gõ nhịp.** Profile phụ muốn chạy lịch thì phải có gateway riêng (`<profile> gateway install` tạo dịch vụ
+  `hermes-gateway-<profile>` trên máy dùng systemd/launchd). Trên Rocky Hermes chạy trong Docker: cách chạy gateway của profile phụ **chưa xác minh**.
+- **Điều khiển có sẵn:** `hermes pause` / `hermes resume` (dừng khẩn cấp mọi cron), tạm dừng, sửa, chạy ngay, xoá từng job. Thêm: vô hiệu hoá tài khoản dịch vụ trên NMPRP; thu hồi khoá Claude API của Hermes.
+- **Công tắc AI của NMPRP không dừng được Hermes** (Hermes gọi Claude API bằng khoá riêng): skill có bước 0 đọc công tắc qua client (tự giác).
+
 ## Chưa kiểm chứng
 - Cách Hermes gọi `support/nmprp_client.py` (terminal, MCP hay plugin).
 - Cron của profile phụ có chạy khi gateway của profile mặc định đang chạy hay không.
