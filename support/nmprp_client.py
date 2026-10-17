@@ -3,9 +3,11 @@
 Design rules (see docs/NMPRP_HERMES_API_ACCESS.md):
 - Only GET requests after login; one POST allowed: /admin/auth/login.
 - Path allowlist; everything else is refused BEFORE any network call.
-- CPT codes are AMA-copyrighted and must never reach a model, memory or log:
+- CPT codes are AMA-copyrighted. By DEFAULT they must never reach a model, memory or log:
   /admin/cpt-tree/khung/ma-cpt and review kind=cpt are refused, and the keys listed in
   CPT_KEYS are removed from every response (defensive; NMPRP is the source of truth).
+  The project owner may take responsibility for CPT licensing and enable CPT content with
+  NMPRP_ALLOW_CPT=1 (or allow_cpt=True); the default stays strict.
 - Credentials come from the environment; the session token lives in memory only.
 - Errors name the path and HTTP status, never a body, token or password.
 """
@@ -21,6 +23,10 @@ import urllib.request
 LOGIN_PATH = "/admin/auth/login"
 
 # (regex for the path, allowed values for the `kind` query parameter or None when unused)
+_CPT_GET = (
+    (re.compile(r"^/admin/cpt-tree/khung/ma-cpt$"), None),
+)
+_ALLOWED_CPT_KINDS = {"cpt"}
 _ALLOWED_GET = (
     (re.compile(r"^/admin/cpt-tree/khung$"), None),
     (re.compile(r"^/admin/cpn-ai/runs$"), None),
@@ -48,35 +54,39 @@ def strip_cpt(obj):
     return obj
 
 
-def check_allowed(path: str, query: dict | None = None) -> None:
+def check_allowed(path: str, query: dict | None = None, allow_cpt: bool = False) -> None:
     """Raise NmprpError unless (path, query) is an allowed read-only request."""
     if not isinstance(path, str) or not path.startswith("/") or ".." in path or "//" in path:
         raise NmprpError("Refused: malformed path")
-    if any(part in path for part in _BLOCKED_PATH_PARTS):
+    if not allow_cpt and any(part in path for part in _BLOCKED_PATH_PARTS):
         raise NmprpError(f"Refused: path is blocked (CPT content): {path}")
-    for rx, kinds in _ALLOWED_GET:
+    for rx, kinds in _ALLOWED_GET + (_CPT_GET if allow_cpt else ()):
         if rx.match(path):
             if kinds is not None:
                 kind = str((query or {}).get("kind", "")).lower()
-                if kind not in kinds:
+                if kind not in (kinds | (_ALLOWED_CPT_KINDS if allow_cpt else set())):
                     raise NmprpError(f"Refused: kind={kind!r} not allowed for {path}")
             return
     raise NmprpError(f"Refused: path not on the allowlist: {path}")
 
 
 class NmprpClient:
-    def __init__(self, base_url=None, username=None, password=None, timeout=30, opener=None):
+    def __init__(self, base_url=None, username=None, password=None, timeout=30, opener=None,
+                 allow_cpt=None):
         self.base_url = (base_url or os.environ.get("NMPRP_BASE_URL", "")).rstrip("/")
         self._username = username or os.environ.get("NMPRP_SERVICE_USER", "")
         self._password = password or os.environ.get("NMPRP_SERVICE_PASSWORD", "")
         self.timeout = timeout
         self._opener = opener or urllib.request.build_opener()
         self._token = None
+        if allow_cpt is None:
+            allow_cpt = os.environ.get("NMPRP_ALLOW_CPT", "") == "1"
+        self.allow_cpt = bool(allow_cpt)
         if not (self.base_url and self._username and self._password):
             raise NmprpError("Missing NMPRP_BASE_URL / NMPRP_SERVICE_USER / NMPRP_SERVICE_PASSWORD")
 
     def __repr__(self):  # never print credentials
-        return f"NmprpClient(base_url={self.base_url!r})"
+        return f"NmprpClient(base_url={self.base_url!r}, allow_cpt={self.allow_cpt})"
 
     def _open(self, req, label):
         try:
@@ -99,7 +109,7 @@ class NmprpClient:
 
     def get(self, path: str, **query):
         """GET an allowlisted path; returns the parsed JSON with CPT keys stripped."""
-        check_allowed(path, query)
+        check_allowed(path, query, self.allow_cpt)
         qs = urllib.parse.urlencode({k: v for k, v in query.items() if v not in (None, "")})
         url = self.base_url + path + (("?" + qs) if qs else "")
         for attempt in (1, 2):
@@ -108,7 +118,8 @@ class NmprpClient:
             req = urllib.request.Request(url, method="GET",
                                          headers={"Authorization": "Bearer " + self._token})
             try:
-                return strip_cpt(self._open(req, f"GET {path}"))
+                data = self._open(req, f"GET {path}")
+                return data if self.allow_cpt else strip_cpt(data)
             except NmprpError as e:
                 if "HTTP 401" in str(e) and attempt == 1:
                     self._token = None   # session expired: log in once more

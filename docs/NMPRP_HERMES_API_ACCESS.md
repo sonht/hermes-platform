@@ -17,7 +17,12 @@ Giai đoạn thí điểm chỉ **ĐỌC**. Code: `support/nmprp_client.py`, tes
 `/review/search?kind=pl3|pl1` · `/review/chapters?kind=pl3|pl1` · `/review/map?kind=pl1`
 (API NMPRP vẫn gọi PL2 là `pl3` ở tham số `kind`.)
 
-## Bản quyền CPT (AMA) — bất khả xâm phạm
+## Bản quyền CPT (AMA)
+Chủ dự án nhận trách nhiệm về bản quyền CPT (17/10/2026). Vì vậy client có **công tắc**: `NMPRP_ALLOW_CPT=1` (hoặc `allow_cpt=True`)
+cho phép đọc nội dung CPT. **Mặc định TẮT**; chỉ chủ dự án bật, và việc bật nghĩa là mã CPT có thể đi vào lời gọi mô hình, bộ nhớ và log của Hermes.
+Quy tắc riêng của NMPRP («mã CPT không được phát ra API ngoài») là của NMPRP; đổi nó là quyết định của chủ dự án ở kho NMPRP.
+
+Mặc định (công tắc tắt):
 - Chặn `/admin/cpt-tree/khung/ma-cpt` và `kind=cpt`.
 - Khi đã đăng nhập, `/admin/cpt-tree/khung` trả thêm `dai_ma` (dải mã CPT): client **xoá** `dai_ma`, `ma_cpt`, `cpt_code`, `cpt_codes`, `cpt_range` ở mọi cấp trước khi dữ liệu tới Hermes.
   Danh sách khoá là phòng thủ thêm, chưa kiểm chứng đầy đủ với mọi đầu ra của NMPRP.

@@ -96,6 +96,17 @@ class ClientTest(unittest.TestCase):
         self.assertNotIn("wrong-secret", str(cm.exception))
         self.assertNotIn("wrong-secret", repr(self.client()))
 
+    def test_owner_can_enable_cpt_content_explicitly(self):
+        c = NmprpClient(self.base, "svc", "pw", allow_cpt=True)
+        self.assertEqual(c.khung()["nodes"][0]["dai_ma"], "14000 - 14350")   # kept when owner enables
+        check_allowed("/admin/cpt-tree/khung/ma-cpt", {}, allow_cpt=True)
+        check_allowed("/review/map", {"kind": "cpt"}, allow_cpt=True)
+        with self.assertRaises(NmprpError):                                  # default stays strict
+            check_allowed("/admin/cpt-tree/khung/ma-cpt", {})
+        with self.assertRaises(NmprpError):                                  # still allowlist-only
+            check_allowed("/admin/cpn-ai/runs/r1/duyet", {}, allow_cpt=True)
+        self.assertFalse(self.client().allow_cpt)
+
     def test_missing_config(self):
         with self.assertRaises(NmprpError):
             NmprpClient("", "", "")
