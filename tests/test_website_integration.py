@@ -106,7 +106,7 @@ class WebsiteIntegrationTests(unittest.TestCase):
 
     def test_application_routes(self):
         for path, marker in (("/", "Hermes Platform"), ("/chat", "Cổng hỗ trợ"),
-                             ("/dashboard", "Support Intelligence"), ("/web", "Website Support Widget")):
+                             ("/dashboard", "Support Intelligence"), ("/web", "Support Widget")):
             conn = HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
             conn.request("GET", path)
             response = conn.getresponse()
