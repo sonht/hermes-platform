@@ -71,6 +71,30 @@ class WebsiteIntegrationTests(unittest.TestCase):
         self.assertIn("Procedure.jsx", body["answer"])
         self.assertIn("chưa phải hướng dẫn", body["answer"])
 
+    def test_feedback_disabled_by_default(self):
+        status, body = self.feedback({"app": "nmprp", "kind": "bug", "summary": "Không lưu được kỹ thuật"})
+        self.assertEqual(status, 404)
+
+    def test_feedback_opt_in_and_validation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            with patch.dict(os.environ, {
+                "HERMES_FEEDBACK_ENABLED": "1",
+                "HERMES_FEEDBACK_APPS": "nmprp",
+                "HERMES_FEEDBACK_DB": str(Path(temp) / "feedback.sqlite3"),
+            }):
+                status, _ = self.feedback({"app": "nmprp", "kind": "bug", "summary": "Không lưu được kỹ thuật"})
+                self.assertEqual(status, 202)
+                status, _ = self.feedback({"app": "other", "kind": "bug", "summary": "Không lưu được kỹ thuật"})
+                self.assertEqual(status, 400)
+
+    def feedback(self, payload):
+        conn = HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
+        conn.request("POST", "/api/public/feedback", json.dumps(payload), {"Content-Type": "application/json"})
+        response = conn.getresponse()
+        status, data = response.status, json.loads(response.read())
+        conn.close()
+        return status, data
+
     def test_public_rate_limit(self):
         for _ in range(5):
             self.request(path="/api/public/chat")
