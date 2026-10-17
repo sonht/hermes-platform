@@ -11,7 +11,7 @@ Do not modify the production base Compose for this experiment. The override pres
 ## Security prerequisites
 
 1. Review upstream Basic Auth behavior and test unauthenticated API/WebSocket access, not just the `302 /login` redirect. The isolated test proved interactive login, not a complete security audit.
-2. Do not expose this administration surface via Caddy, DNS or a public interface.
+2. Do not expose this administration surface via Caddy, DNS or a public interface, except the controlled `/agent` path described in `HERMES_AGENT_PATH_ROUTING.md`.
 3. Use unique production admin credentials, a strong password/hash and a unique persistent signing secret; do not reuse test credentials.
 4. Verify current volume backup and recovery procedure; do not dump secrets into terminal logs, chat, CI or GitHub.
 5. Schedule a short maintenance window: **Compose service recreation interrupts the gateway**.
