@@ -21,6 +21,7 @@ from support.code_aware import public_answer, retrieve
 from support.public_inference import answer as public_ai_answer
 from support.intelligence import record as record_feedback, summary as feedback_summary, recent as feedback_recent, set_status as feedback_set_status
 from support.dashboard_auth import login as admin_login, valid as admin_valid, COOKIE as ADMIN_COOKIE
+from support.faq_candidates import candidates as faq_candidates
 
 _public_lock = threading.Lock()
 _public_requests = defaultdict(deque)
@@ -51,6 +52,19 @@ class Handler(SimpleHTTPRequestHandler):
             try:
                 self.send_json(200, {"rows": feedback_summary(db)})
             except OSError:
+                self.send_json(503, {"error": "Không đọc được dữ liệu."})
+            return
+        if path == "/api/admin/faq/candidates":
+            if not admin_valid(self.headers.get("Cookie", "")):
+                self.send_json(401, {"error": "Cần đăng nhập quản trị."})
+                return
+            db = os.environ.get("HERMES_FEEDBACK_DB", "")
+            if not db:
+                self.send_json(503, {"error": "Chưa cấu hình dữ liệu."})
+                return
+            try:
+                self.send_json(200, {"rows": faq_candidates(db)})
+            except (OSError, ValueError):
                 self.send_json(503, {"error": "Không đọc được dữ liệu."})
             return
         if path == "/api/admin/reports":
