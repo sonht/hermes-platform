@@ -78,3 +78,33 @@ def retention(db_path: str, keep_days: int = 30) -> int:
     cutoff = (datetime.now(timezone.utc).date() - timedelta(days=keep_days)).isoformat()
     with _lock, _connect(db_path) as db:
         return db.execute("DELETE FROM feedback WHERE day < ?", (cutoff,)).rowcount
+
+
+def recent(db_path: str, app: str | None = None, kind: str | None = None, limit: int = 100) -> list[dict]:
+    """Admin-only list of minimized reports for manual triage."""
+    if kind is not None and kind not in KINDS:
+        raise ValueError("Invalid kind")
+    if app is not None and not re.fullmatch(r"[a-z][a-z0-9_-]{1,31}", app):
+        raise ValueError("Invalid application")
+    if not 1 <= limit <= 200:
+        raise ValueError("Invalid limit")
+    where, args = [], []
+    if app:
+        where.append("app=?")
+        args.append(app)
+    if kind:
+        where.append("kind=?")
+        args.append(kind)
+    clause = " WHERE " + " AND ".join(where) if where else ""
+    with _connect(db_path) as db:
+        rows = db.execute("SELECT id,day,app,kind,summary,status FROM feedback" + clause +
+                          " ORDER BY id DESC LIMIT ?", (*args, limit)).fetchall()
+        return [dict(zip(("id", "day", "app", "kind", "summary", "status"), row)) for row in rows]
+
+
+def set_status(db_path: str, report_id: int, status: str) -> bool:
+    if status not in {"new", "reviewed", "resolved"} or type(report_id) is not int or report_id < 1:
+        raise ValueError("Invalid status update")
+    with _lock, _connect(db_path) as db:
+        result = db.execute("UPDATE feedback SET status=? WHERE id=?", (status, report_id))
+        return result.rowcount == 1
