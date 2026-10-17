@@ -45,7 +45,7 @@ class ProfileFilesTest(unittest.TestCase):
         self.assertFalse(any("lich-su" in p.parts for p in ROOT.rglob("*")))
 
     def _live_docs(self):
-        return [p for p in ROOT.rglob("*.md")] + [DOCS / "NMPRP_HERMES_BRAIN_DUMP.md"]
+        return [p for p in ROOT.rglob("*.md")] + [DOCS / "NMPRP_HERMES_BRAIN_DUMP.md", DOCS / "NMPRP_HERMES_KIEN_TRUC.md"]
 
     def test_live_docs_use_only_pl1_and_pl2(self):
         allowed = re.compile(r"kind=pl3|PL3-PROC-", re.I)
