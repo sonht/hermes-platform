@@ -2,7 +2,9 @@ import re
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1] / "hermes" / "profiles" / "nmprp-mapping"
+REPO = Path(__file__).resolve().parents[1]
+ROOT = REPO / "hermes" / "profiles" / "nmprp-mapping"
+DRAFTS = REPO / "hermes" / "drafts"
 LIMIT_MEMORY, LIMIT_USER = 2200, 1375
 
 
@@ -33,6 +35,21 @@ class ProfileFilesTest(unittest.TestCase):
         for p in ROOT.rglob("*"):
             if p.is_file():
                 self.assertIsNone(bad.search(p.read_text(encoding="utf-8")), str(p))
+
+    def test_drafts_have_no_secrets_and_are_not_in_the_installable_profile(self):
+        bad = re.compile(r"(sk-[A-Za-z0-9]{10,}|Bearer\s+[A-Za-z0-9_\-]{20,}|password\s*[:=]\s*\S+|\b\d{5}\b\s*-\s*\d{5}\b)", re.I)
+        files = [p for p in DRAFTS.rglob("*") if p.is_file()]
+        self.assertTrue(files)
+        for p in files:
+            self.assertIsNone(bad.search(p.read_text(encoding="utf-8")), str(p))
+        self.assertFalse(any("drafts" in p.parts for p in ROOT.rglob("*")))        # bản nháp không nằm trong profile sẽ cài
+
+    def test_reconciliation_keeps_the_pl3_warning(self):
+        doc = (REPO / "docs" / "NMPRP_HA_PROFILES_V1_RECONCILIATION.md").read_text(encoding="utf-8")
+        self.assertIn("PL3 là tên cũ của PL2", doc)
+        self.assertIn("AWAITING OWNER APPROVAL", doc)
+        wrong = (DRAFTS / "Hermes_HA_Profiles_v1" / "profiles" / "nmprp" / "SOUL.md").read_text(encoding="utf-8")
+        self.assertIn("PL3 thuộc kiến trúc rộng hơn", wrong)     # dòng sai còn trong bản nháp; nếu bị sửa thì cập nhật cả tài liệu đối chiếu
 
     def test_soul_keeps_the_hard_rules(self):
         soul = read("SOUL.md")
