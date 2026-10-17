@@ -33,6 +33,7 @@ Mặc định (công tắc tắt):
 - Client có `phan_hoi(sau, limit)` (một trang) và `phan_hoi_moi(sau)` (đọc hết phần mới, trả `(các dòng, con trỏ mới)`). Job tự lưu con trỏ giữa hai lần chạy; con trỏ rỗng = đọc từ đầu.
 - Chỉ đường `GET /admin/hermes/phan-hoi` được thêm. `GET /admin/hermes/goi-y`, `/tom-tat`, `/su-kien` là đường của tab (chỉ admin) nên **không** nằm trong danh sách cho phép. Hermes **không** gọi được đường duyệt (`POST .../duyet`): quyết định là của người.
 - Mỗi dòng phản hồi là `EXPERT_FEEDBACK` (ý kiến thẩm định), **không** phải nhãn vàng; một dòng đơn lẻ không đủ để đề xuất đổi quy tắc (cần từ 2 ca có nguồn). Quyết định `SUA` kèm `branch_key_sua` (nút đúng do chuyên gia nhập). Không có tên người duyệt.
+- Máy chủ chỉ trả phản hồi **đã ổn định** (cũ hơn khoảng 5 giây) để hai lần duyệt chồng nhau không làm con trỏ bỏ sót dòng; phản hồi mới đến Hermes **trễ vài giây** là chủ ý, không phải lỗi. Con trỏ chỉ đi tới, nên lần đọc rỗng giữ nguyên con trỏ cũ.
 - Đọc theo con trỏ cần máy chủ NMPRP có bản đọc theo con trỏ (nhánh `viec/hermes-phan-hoi-sua` của `nmprp`, xếp chồng trên #697). Với bản cũ chưa có con trỏ, client dừng khi trang lặp lại thay vì lặp vô hạn.
 
 ## Chưa kiểm chứng

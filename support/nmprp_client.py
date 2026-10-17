@@ -192,7 +192,7 @@ class NmprpClient:
     def phan_hoi_moi(self, sau="", limit=200, toi_da_trang=50):
         """Read ALL feedback after cursor `sau`. Returns (rows, new_cursor); the caller stores new_cursor for the next run.
 
-        Rows are de-duplicated by goi_y_id. Stops when a page is empty, has no new row (a server that ignores the cursor would
+        The server returns only STABLE feedback (a few seconds old), so new rows may arrive a few seconds late; that is intended. Rows are de-duplicated by goi_y_id. Stops when a page is empty, has no new row (a server that ignores the cursor would
         otherwise repeat the same page forever) or after `toi_da_trang` pages. Feedback is a PROPOSAL signal (EXPERT_FEEDBACK),
         never a gold label; do not turn it into memory or rules from a single row."""
         rows, thay = [], set()
