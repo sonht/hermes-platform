@@ -12,7 +12,7 @@
 3. `NMPRP_CLAUDE_CODE_HANDOFF_20261011.zip`: bàn giao lịch sử; không ghi đè nguồn mới hơn.
 4. `Hermes_HA_Profiles_v1_DRAFT.zip`: profile dự thảo, không phải cấu hình đã triển khai.
 
-> **Phạm vi thuật ngữ:** Trong CPN-AI, PL2 là danh mục đầu vào để ánh xạ sang **nút của khung CPT**; không đổi nhãn PL2 thành PL3. Không xuất mã CPT qua API ngoài. Không đưa mật khẩu, token, API key, dữ liệu người bệnh vào prompt/log/memory. Không tự đặt mã chính thức.
+> **Phạm vi thuật ngữ:** Trong CPN-AI, PL2 là danh mục đầu vào để ánh xạ sang **nút của khung CPT**; không đổi nhãn PL2 thành PL3 (PL3 là tên cũ của PL2; mọi tên mới đều dùng PL2). Không xuất mã CPT qua API ngoài. Không đưa mật khẩu, token, API key, dữ liệu người bệnh vào prompt/log/memory. Không tự đặt mã chính thức.
 
 ## A. Thẩm quyền và người duyệt
 

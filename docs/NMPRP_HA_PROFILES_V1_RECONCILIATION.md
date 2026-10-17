@@ -24,7 +24,7 @@ Gói dùng tệp phẳng `profiles/nmprp/SKILL_*.md`, **không** đúng định 
 | `docs/NMPRP_BRAIN_DUMP_ANSWERS_v1_DRAFT.md` (chỉ có ở v1.1) | Trả lời 32 câu, gắn nhãn SOURCE / PROPOSAL / OWNER / DATA | Bản thứ hai của brain dump; xem mục 6 |
 
 ## 2. Chỗ LỆCH so với dữ liệu và quyết định đã xác minh (cần sửa trước khi nạp vào profile)
-1. **`profiles/nmprp/SOUL.md`: «PL3 thuộc kiến trúc rộng hơn».** Sai theo NMPRP. Theo `CLAUDE.md` (bất biến 5) và `docs/doi-ten-pl3-pl2/KE_HOACH.md` của `sonht/nmprp`: **PL3 là tên cũ của PL2**
+1. **ĐÃ SỬA (chủ dự án đồng ý): `profiles/nmprp/SOUL.md`: «PL3 thuộc kiến trúc rộng hơn».** Sai theo NMPRP; bản nháp nay ghi «PL3 là TÊN CŨ của PL2» (cùng sửa câu tương tự ở phạm vi thuật ngữ của brain dump v1.1). Phần mô tả PL1 và các trạng thái (mục 2, 3) CHƯA sửa vì chưa được duyệt. Theo `CLAUDE.md` (bất biến 5) và `docs/doi-ten-pl3-pl2/KE_HOACH.md` của `sonht/nmprp`: **PL3 là tên cũ của PL2**
    (đổi 03/09/2026; không tạo thêm định danh `pl3`). Dữ liệu còn dấu vết: `PROCEDURE_ID` bắt đầu `PL3-PROC-…`; tham số API `kind=pl3` chỉ PL2.
    Phần đúng của dòng này: *không tạo định danh `pl3` mới trong tên hay schema CPN-AI.* Nhiều khả năng đây là hệ quả của handoff cũ 11/10 (trước hoặc ngay quanh lúc đổi tên); chưa kiểm chứng vì chưa có tệp đó.
 2. **`profiles/nmprp/SOUL.md`: PL1 «nguồn liên hệ lịch sử/giá».** Thiếu: PL1 là **Phụ lục 1** (danh mục phẫu thuật, thủ thuật, mã theo TT23, giữ `BS_`), nguồn của phân loại PT/TT; giá là lớp ghép theo mã.
@@ -65,7 +65,7 @@ Các dữ kiện (b) trích từ tài liệu mô tả dự án ngày 17/10 (150 
 Đề nghị: khi chủ dự án duyệt, lấy **(b) làm bản gốc** vì có nhãn nguồn; giữ (a) làm hồ sơ lịch sử. Không xoá bản nào khi chưa được chỉ định.
 
 Chỗ (b) **vẫn cần sửa** (cùng loại lỗi với mục 2):
-1. Câu 4 và phạm vi thuật ngữ: «PL1: danh mục lịch sử … không phải đầu ra đích»; «không đổi nhãn PL2 thành PL3». Hướng đổi tên thật là **PL3 → PL2** (PL3 là tên cũ của PL2); PL1 là **Phụ lục 1 (PT/TT, mã theo TT23)**.
+1. Câu 4 và phạm vi thuật ngữ: «PL1: danh mục lịch sử … không phải đầu ra đích» (chưa sửa); «không đổi nhãn PL2 thành PL3» (đã thêm chú thích). Hướng đổi tên thật là **PL3 → PL2** (PL3 là tên cũ của PL2); PL1 là **Phụ lục 1 (PT/TT, mã theo TT23)**.
 2. Câu 1, 6, 18 dùng trạng thái `DISPUTED`, `RULE_CANDIDATE`, `PENDING_EXPERT_REVIEW`: **không có ở NMPRP**; giá trị thật là `PENDING` (review_status) và `EXPERT_REVIEW` (decision).
 3. Câu 18 chỉ ghi bốn mã, chưa có tên. Dữ kiện từ `REF_PL2_CONSOLIDATED_PROCEDURE_REGISTRY.csv` (chương 6 «Nội tiết») đã nằm ở `docs/NMPRP_BRAIN_DUMP_DRAFT_v1.md` mục 2.3: 6.71 *Khám bàn chân người bệnh đái tháo đường*; 6.107 *Kỹ thuật truyền enzym*; 6.111 *Kỹ thuật truyền gen trị liệu*; 6.120 *Nạo vét hạch cổ trong ung thư tuyến giáp đã phẫu thuật* (cả bốn `Needs review`). Đây là dữ kiện, không phải đáp án.
 4. Câu 21 dùng bộ chỉ số tự đặt (precision@1, recall@3, …) bên cạnh ngưỡng ΔF1 +0,02 của NMPRP; nên dùng đúng bộ đo `cpn_gold_do.py` (một bản cài đặt).

@@ -49,7 +49,8 @@ class ProfileFilesTest(unittest.TestCase):
         self.assertIn("PL3 là tên cũ của PL2", doc)
         self.assertIn("AWAITING OWNER APPROVAL", doc)
         wrong = (DRAFTS / "Hermes_HA_Profiles_v1" / "profiles" / "nmprp" / "SOUL.md").read_text(encoding="utf-8")
-        self.assertIn("PL3 thuộc kiến trúc rộng hơn", wrong)     # dòng sai còn trong bản nháp; nếu bị sửa thì cập nhật cả tài liệu đối chiếu
+        self.assertNotIn("PL3 thuộc kiến trúc rộng hơn", wrong)  # đã sửa theo chủ dự án
+        self.assertIn("PL3 là TÊN CŨ của PL2", wrong)
 
     def test_soul_keeps_the_hard_rules(self):
         soul = read("SOUL.md")
