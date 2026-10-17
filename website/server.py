@@ -19,7 +19,7 @@ from support.user_journey_builder import build_journey
 from support.hermes_gateway import ask_hermes
 from support.code_aware import public_answer, retrieve
 from support.public_inference import answer as public_ai_answer
-from support.intelligence import record as record_feedback, summary as feedback_summary
+from support.intelligence import record as record_feedback, summary as feedback_summary, recent as feedback_recent, set_status as feedback_set_status
 from support.dashboard_auth import login as admin_login, valid as admin_valid, COOKIE as ADMIN_COOKIE
 
 _public_lock = threading.Lock()
@@ -53,6 +53,19 @@ class Handler(SimpleHTTPRequestHandler):
             except OSError:
                 self.send_json(503, {"error": "Không đọc được dữ liệu."})
             return
+        if path == "/api/admin/reports":
+            if not admin_valid(self.headers.get("Cookie", "")):
+                self.send_json(401, {"error": "Cần đăng nhập quản trị."})
+                return
+            db = os.environ.get("HERMES_FEEDBACK_DB", "")
+            if not db:
+                self.send_json(503, {"error": "Chưa cấu hình dữ liệu."})
+                return
+            try:
+                self.send_json(200, {"rows": feedback_recent(db)})
+            except (OSError, ValueError):
+                self.send_json(503, {"error": "Không đọc được dữ liệu."})
+            return
         if path == "/api/admin/session":
             self.send_json(200, {"authenticated": admin_valid(self.headers.get("Cookie", ""))})
             return
@@ -62,6 +75,8 @@ class Handler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def do_POST(self):
+        if self.path == "/api/admin/report/status":
+            return self.handle_report_status()
         if self.path == "/api/admin/login":
             return self.handle_admin_login()
         if self.path not in ("/api/chat", "/api/public/chat", "/api/public/feedback"):
@@ -88,6 +103,35 @@ class Handler(SimpleHTTPRequestHandler):
             finally:
                 _public_slots.release()
         return self.handle_chat(public=False)
+
+    def handle_report_status(self):
+        if not admin_valid(self.headers.get("Cookie", "")):
+            self.send_json(401, {"error": "Cần đăng nhập quản trị."})
+            return
+        # JSON + SameSite=Strict + exact same-origin browser check for mutation.
+        origin = self.headers.get("Origin", "")
+        host = self.headers.get("Host", "")
+        if origin != "https://" + host:
+            self.send_json(403, {"error": "Nguồn yêu cầu không hợp lệ."})
+            return
+        if self.headers.get("Content-Type", "").split(";")[0].strip() != "application/json":
+            self.send_json(415, {"error": "Chỉ hỗ trợ JSON."})
+            return
+        db = os.environ.get("HERMES_FEEDBACK_DB", "")
+        if not db:
+            self.send_json(503, {"error": "Chưa cấu hình dữ liệu."})
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if not 1 <= length <= 256:
+                raise ValueError("Invalid length")
+            payload = json.loads(self.rfile.read(length))
+            updated = feedback_set_status(db, payload["id"], payload["status"])
+            self.send_json(200 if updated else 404, {"updated": updated})
+        except (ValueError, TypeError, KeyError, json.JSONDecodeError):
+            self.send_json(400, {"error": "Dữ liệu không hợp lệ."})
+        except OSError:
+            self.send_json(503, {"error": "Không cập nhật được dữ liệu."})
 
     def handle_admin_login(self):
         # Login rate limiting at origin is a temporary safety net; edge limits
