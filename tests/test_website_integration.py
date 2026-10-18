@@ -209,10 +209,12 @@ class WebsiteIntegrationTests(unittest.TestCase):
 
     def test_public_never_calls_hermes_or_repo(self):
         with patch.dict(os.environ, {"HERMES_AGENT_ENABLED": "1"}), \
-                patch("website.server.ask_hermes", side_effect=AssertionError), \
-                patch("website.server.build_journey", side_effect=AssertionError):
+                patch("website.server.ask_hermes", side_effect=AssertionError) as hermes, \
+                patch("website.server.build_journey", side_effect=AssertionError) as journey:
             self.assertEqual(self.request(path=PUBLIC, message="đăng nhập")[0], 200)
             self.assertEqual(self.request(path=PUBLIC, message="xin chào")[0], 200)
+        hermes.assert_not_called()
+        journey.assert_not_called()
 
     def test_public_uses_shipped_knowledge_relative_to_repo_root(self):
         server_module.APPS = self._apps  # real website/apps.json -> real knowledge/dm

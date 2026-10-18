@@ -1,4 +1,4 @@
-"""Reviewed knowledge entries for the support widget: load, validate, match, render."""
+"""Knowledge entries (approved or draft) for the support widget: load, validate, match, render."""
 import json
 import re
 import unicodedata

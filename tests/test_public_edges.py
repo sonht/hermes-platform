@@ -53,6 +53,14 @@ class PublicEdgeTests(unittest.TestCase):
         conn.close()
         return out
 
+    def test_daily_429_carries_cors_for_allowed_origin(self):
+        server_module.LIMITER = RateLimiter(daily_per_app=1)
+        hdr = {"Origin": DM}
+        self.assertEqual(self.post({"app": "dm", "message": "đăng nhập"}, hdr)[0], 200)
+        status, h, _ = self.post({"app": "dm", "message": "đăng nhập"}, hdr)
+        self.assertEqual(status, 429)
+        self.assertEqual(h["Access-Control-Allow-Origin"], DM)
+
     def test_origin_of_other_app_cannot_use_dm_403_no_cors(self):
         status, h, _ = self.post({"app": "dm", "message": "đăng nhập"}, {"Origin": OTHER})
         self.assertEqual(status, 403)

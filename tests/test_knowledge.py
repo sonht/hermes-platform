@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from support.knowledge import NO_ANSWER, find_entry, load_entries, render_answer
+from support.knowledge import NO_ANSWER, REQUIRED, find_entry, load_entries, render_answer
 
 
 def entry(**kw):
@@ -67,7 +67,7 @@ class KnowledgeTests(unittest.TestCase):
 
     def test_non_object_entry_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
-            self.write(tmp, "a.json", [])
+            self.write(tmp, "a.json", list(REQUIRED))
             with self.assertRaises(ValueError):
                 load_entries(tmp)
 
