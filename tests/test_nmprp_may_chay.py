@@ -76,6 +76,47 @@ def tra_loi(*ma):
     return {"ket_qua": [tot(m, TUYEN_GIAP, TRICH) for m in ma]}
 
 
+def runner_van_xuoi(van_ban):
+    """Fake `docker exec`: mo hinh tra loi bang van xuoi (khong co JSON), nhu khi no dung o «buoc 0» xin terminal."""
+    goi = []
+
+    def run(argv):
+        goi.append(argv)
+        if argv[-2] == "-z":
+            return 0, van_ban
+        return 0, json.dumps({"total_tokens": 7000, "api_calls": 2})
+    run.goi = goi
+    return run
+
+
+class TestKhongTraJson(unittest.TestCase):
+    def test_tra_loi_van_xuoi_ghi_dung_ly_do_chu_khong_phai_cau_chung(self):
+        c = FakeNmprp()
+        run = runner_van_xuoi("Toi chua kiem tra duoc cong tac AI cua NMPRP (buoc 0) vi khong co terminal. Toi dung o day.")
+        self.assertEqual(mc.xu_ly_luot(c, luot(ds_pl2=PL2[:2], me=2), cau_hinh(), run), "XONG")
+        kq = c.loai("ket_qua")[0][1]
+        self.assertEqual([r["muc"] for r in kq], ["KHONG_DAP_UNG", "KHONG_DAP_UNG"])
+        for r in kq:
+            self.assertIn("khong tra JSON", r["ly_do"])
+            self.assertIn("buoc 0", r["ly_do"])                                         # tra loi that cua mo hinh, de nguoi duyet thay
+            self.assertNotIn("mo hinh khong tra loi cho PL2 nay", r["ly_do"])
+
+    def test_co_json_nhung_thieu_pl2_van_giu_cau_chung_khong_bia_ly_do_van_xuoi(self):
+        c, run = FakeNmprp(), runner_tra(tra_loi("6.1"))
+        mc.xu_ly_luot(c, luot(ds_pl2=PL2[:2], me=2), cau_hinh(), run)
+        kq = {r["pl2_code"]: r for r in c.loai("ket_qua")[0][1]}
+        self.assertEqual(kq["6.2"]["muc"], "KHONG_DAP_UNG")
+        self.assertEqual(kq["6.2"]["ly_do"], "mo hinh khong tra loi cho PL2 nay")        # co JSON => khong phai van xuoi
+        self.assertNotEqual(kq["6.1"]["muc"], "KHONG_DAP_UNG")
+
+    def test_mau_van_xuoi_co_chuoi_giong_ma_cpt_bi_bo(self):
+        c = FakeNmprp()
+        mc.xu_ly_luot(c, luot(ds_pl2=PL2[:1], me=1), cau_hinh(), runner_van_xuoi("Toi khong the. Ma 99213 la gi?"))
+        r = c.loai("ket_qua")[0][1][0]
+        self.assertNotIn("99213", r["ly_do"])
+        self.assertIn("khong tra JSON", r["ly_do"])
+
+
 class TestChayLuot(unittest.TestCase):
     def test_chay_het_ba_pl2_hai_lan_goi_va_gui_goi_y_dung_hop_dong(self):
         c, run = FakeNmprp(), runner_tra(tra_loi("6.1", "6.2"))

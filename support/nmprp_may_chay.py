@@ -133,6 +133,19 @@ def _theo_phan_hoi(rep: dict, con_lo: bool):
         raise DungLuot("TAM_DUNG", {"HET_GOI": "Het so loi goi cua dot", "HET_TOKEN": "Cham tran token"}.get(ly, "May chu yeu cau dung"))
 
 
+def _ghi_ly_do_khong_json(kq: dict, out: str) -> None:
+    """The model answered in prose (no JSON object at all). `kiem_ket_qua` marks every PL2 of the batch KHONG_DAP_UNG with a
+    generic reason; say what the model actually did, so a reviewer can tell «refused / asked for a tool» from «omitted this PL2».
+    Only a short single-line snippet, and nothing that looks like a CPT code (the server rule is the same)."""
+    mau = " ".join((out or "").split())[:300]
+    if sh.CPT_LIKE.search(mau):
+        mau = ""
+    ly_do = "mo hinh khong tra JSON (tra loi bang van xuoi)" + (": " + mau if mau else "")
+    for r in kq.values():
+        if r["muc"] == "KHONG_DAP_UNG":
+            r["ly_do"] = ly_do
+
+
 def _chay_luot(client, luot: dict, cfg: CauHinh, runner):
     luot_id = luot["luot_id"]
     _kiem_cho_phep(luot, cfg)
@@ -185,7 +198,10 @@ def _chay_luot(client, luot: dict, cfg: CauHinh, runner):
         out, usage = sh.goi_hermes(prompt, "may-%s-%d.json" % (luot_id, lan_goi), cfg.container, cfg.profile, cfg.ky_nang,
                                    runner, luot.get("mo_hinh") or "", luot.get("suy_luan") or MUC_SUY_LUAN_MAC_DINH)
         token += int(usage.get("total_tokens") or sh.uoc_token(prompt))
-        kq = sh.kiem_ket_qua(sh.tach_json(out), lo, nut, PHIEN_BAN_GOI_Y)
+        du_lieu = sh.tach_json(out)
+        kq = sh.kiem_ket_qua(du_lieu, lo, nut, PHIEN_BAN_GOI_Y)
+        if du_lieu is None:
+            _ghi_ly_do_khong_json(kq, out)
         rep = client.may_tien_do(luot_id, {"SUY_LUAN": {"tt": "XONG", "ghi_chu": ""}, "KIEM_DINH": {"tt": "XONG", "ghi_chu": ""},
                                            "GUI": {"tt": "DANG", "ghi_chu": ""}}, {"lan_goi": lan_goi, "token_da_dung": token})
         # An admin cancel that arrived DURING the model call is first seen here: stop before publishing anything. Only HUY stops

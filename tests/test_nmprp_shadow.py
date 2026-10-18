@@ -72,6 +72,19 @@ def tot(ma, bk, trich, **kw):
     return {"pl2_code": ma, "muc_de_xuat": "REVIEW_RECOMMENDED", "ly_do": "x", "de_xuat": [d]}
 
 
+class TestPromptKhongKiemCongTac(unittest.TestCase):
+    """18/10/2026: 84/129 PL2 cua chuong 6 ra KHONG_DAP_UNG vi mo hinh dung o «buoc 0» cua ky nang (kiem cong tac AI bang
+    terminal), ma phien chay chi co skill_view/skills_list. Cong tac AI da duoc MAY CHAY kiem; prompt phai noi ro."""
+
+    def test_prompt_bao_mo_hinh_khong_kiem_lai_cong_tac_va_tra_json_ngay(self):
+        p = sh.dung_prompt([{"code": "6.1", "name": "x"}], sh.thu_nut_tan(KHUNG))
+        self.assertIn("da duoc may chay kiem TRUOC", p)
+        self.assertIn("KHONG kiem lai", p)
+        self.assertIn("skill_view", p)
+        # loi chi dan nam TRUOC hai khoi du lieu, de mo hinh doc truoc khi gap <NUT>/<PL2>
+        self.assertLess(p.index("KHONG kiem lai"), p.index("\n<NUT>\n"))
+
+
 class TestNhap(unittest.TestCase):
     def test_nut_tan_phang_hoa(self):
         nut = sh.thu_nut_tan(KHUNG)

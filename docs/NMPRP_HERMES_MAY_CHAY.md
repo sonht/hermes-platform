@@ -49,3 +49,8 @@ trần token thấp) ở tab rồi chạy `python3 -m support.nmprp_may_chay` (k
 ## 5. Việc chưa làm
 
 Chưa đo chất lượng; chưa nạp bài học vào bộ nhớ/skill của Hermes (đợt 3); chưa kiểm trên Python 3.9 thật của Rocky (chỉ kiểm cú pháp 3.9).
+
+
+## Sự cố 18/10/2026 — 84/129 PL2 chương 6 ra `KHONG_DAP_UNG`
+
+Nguyên nhân (đọc từ phiên Hermes đã xuất bằng `hermes sessions export --session-id`): ở nhiều lời gọi, mô hình làm theo «bước 0» của skill `nmprp-retrieval-assist` (tự gọi `ai_cong_tac_bat()`), xin công cụ `terminal` không có trong phiên (`-t skills` chỉ cho `skill_view`, `skills_list`), rồi trả lời bằng văn xuôi thay vì JSON. Sửa: prompt nói rõ công tắc đã được máy chạy kiểm và phải trả JSON ngay; skill ghi ngoại lệ cho máy chạy; khi câu trả lời không có JSON, lý do của từng PL2 ghi nguyên văn (rút gọn 300 ký tự, bỏ chuỗi giống mã CPT) thay cho câu chung «mo hinh khong tra loi cho PL2 nay». Bản skill trong profile trên Rocky là bản sao riêng — cần đồng bộ tay; bản vá prompt có hiệu lực ngay khi kéo mã và khởi động lại máy chạy.

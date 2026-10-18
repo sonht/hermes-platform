@@ -10,7 +10,7 @@ description: Tìm nút cây CPT phù hợp cho một PL2 mà truy hồi tự đ�
 - Không dùng để duyệt, áp dụng hay sửa ánh xạ. Skill này chỉ ĐỀ XUẤT.
 
 ## Procedure
-0. **Việc đầu tiên, trước mọi lời gọi mô hình:** gọi `ai_cong_tac_bat()` của `support/nmprp_client.py`. Trả False (hoặc lỗi) thì DỪNG, ghi sự kiện `LOI` nêu lý do và báo lại. Công tắc AI của NMPRP không tự chặn được Hermes, nên bước này là tự giác và bắt buộc.
+0. **Việc đầu tiên, trước mọi lời gọi mô hình:** gọi `ai_cong_tac_bat()` của `support/nmprp_client.py`. Trả False (hoặc lỗi) thì DỪNG, ghi sự kiện `LOI` nêu lý do và báo lại. Công tắc AI của NMPRP không tự chặn được Hermes, nên bước này là tự giác và bắt buộc. **Ngoại lệ:** khi được máy chạy `support/nmprp_may_chay.py` gọi qua `hermes -z` (phiên chỉ có `skill_view`/`skills_list`), máy chạy ĐÃ kiểm công tắc trước lời gọi — bỏ qua bước này và trả JSON ngay; đừng dừng để xin công cụ terminal.
 1. Đọc đầu vào: mã PL2 là CHUỖI nguyên văn. Lấy tên PL2 từ `/review/search` (tham số `kind=pl3` nghĩa là PL2).
 2. Lấy Khung cây CPT một lần cho cả phiên (`/admin/cpt-tree/khung`, chỉ tên và khoá nhánh, không mã CPT). Dùng đúng các hàm trong `support/nmprp_client.py`; không gọi đường nào ngoài danh sách cho phép.
 3. Phân rã tên PL2 thành ba thành phần: hành động (cắt, nội soi, sinh thiết...), đối tượng (cơ quan, hệ cơ quan), đường tiếp cận (mổ mở, nội soi, qua da...). Thiếu đường tiếp cận thì ghi rõ là chưa xác định, không tự điền.
