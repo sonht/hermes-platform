@@ -7,6 +7,7 @@ Format follows Keep a Changelog; versions follow Semantic Versioning.
 ## [Unreleased]
 
 ### Added
+- Chat widget for dm.kcb.vn (`website/widget.js`, one `<script>` tag), a JSON knowledge base for login/registration (`knowledge/dm/`, drafts marked `chua-xac-minh`, generated from NMPRP `origin/main` by `scripts/build_knowledge.py`) and a 20-question golden set. Not deployed.
 - Shadow run for one PL2 chapter (`support/nmprp_shadow.py`, run on the host as `python3 -m support.nmprp_shadow`): reads NMPRP (GET only), asks the `nmprp-mapping` profile through `hermes -z` (tool group `skills`, no terminal/web), validates every answer (branch key must exist in the frame, quotes must be verbatim, no CPT-like strings, max 3 per PL2) and writes local files. Never sends anything to NMPRP. Default is a dry run; token budget instead of dollars because Hermes reports no cost for this model.
 - Profile `nmprp-mapping` installed on Rocky 2026-10-18 (empty profile via `hermes profile create`, knowledge files copied as user `hermes`, gateway stopped, no cron); verified steps recorded in `hermes/profiles/nmprp-mapping/README.md`.
 - Read-only NMPRP API client for Hermes pilot (allowlist, CPT-code stripping, offline tests) and access runbook (`docs/NMPRP_HERMES_API_ACCESS.md`). Not connected to dm.kcb.vn yet.
@@ -15,5 +16,8 @@ Format follows Keep a Changelog; versions follow Semantic Versioning.
 - Repository foundation and production rollout planning.
 - Engineering versioning, change-management and backup/recovery policies.
 - Hermes Agent Dashboard under `/agent` on hermes.kcb.vn via Caddy `X-Forwarded-Prefix`, Tailscale-only (deployed on Rocky 2026-10-17) — Caddy block, smoke and authenticated acceptance scripts, runbook with results and rollback.
+
+### Changed
+- `POST /api/public/chat` now checks the app and `Origin` (CORS), rate-limits per session/app/day instead of per IP, and answers from `knowledge/<app>/` instead of building a journey from the NMPRP source. Internal `POST /api/chat` is unchanged. Not deployed.
 
 No application release has been published yet.
