@@ -26,12 +26,18 @@ Một luồng phụ chào mỗi 60 giây bằng client riêng, để lời gọi
 - Công tắc AI của NMPRP tắt ⇒ `TAM_DUNG` kèm lời nhắn, không gọi mô hình.
 - Tệp dừng mềm `HERMES_RUNNER_DUNG` (mặc định `/home/rocky/hermes-shadow-out/DUNG`): còn tệp thì không nhận việc, không chào.
   `hermes pause` vẫn là nút dừng khẩn cho mọi thứ khác.
+- Từ 19/10/2026: chỉ MỘT máy chạy một lúc — `main` tự khoá một tệp (`flock(2)` không chặn, env `HERMES_RUNNER_LOCK`, mặc định
+  `/home/rocky/hermes-shadow-out/may-chay.lock`) suốt vòng đời tiến trình. Bản thứ hai thấy khoá đã bị giữ thì in «da co may
+  chay khac dang chay» kèm PID và thoát mã **3** mà KHÔNG hỏi NMPRP, KHÔNG gọi mô hình; khoá tự nhả khi tiến trình giữ nó
+  chết. Chi tiết cách xử lý khi báo trùng và cấu hình `RestartPreventExitStatus=3` của systemd:
+  `docs/NMPRP_HERMES_MAY_CHAY_NEN.md`.
 
 ## 3. Cấu hình
 
 Dùng chung `deploy/rocky/nmprp-service.env` (chmod 600, không vào git): `NMPRP_BASE_URL`, `NMPRP_SERVICE_USER`, `NMPRP_SERVICE_PASSWORD`,
 thêm ba biến tuỳ chọn ở `nmprp-service.env.example`. **Tài khoản dịch vụ phải trùng `NMPRP_HERMES_MAY` ở NMPRP** (mặc định
-`hermes-nmprp`); lệch tên thì mọi đường hàng đợi trả 403 — đóng chứ không mở.
+`hermes-nmprp`); lệch tên thì mọi đường hàng đợi trả 403 — đóng chứ không mở. Hai biến riêng của máy chạy, không cần đặt nếu
+dùng mặc định: `HERMES_RUNNER_DUNG` (tệp dừng mềm), `HERMES_RUNNER_LOCK` (tệp khoá một-máy-chạy, mục 2).
 
 ## 4. Chạy thử (CHƯA làm trên Rocky — mới có bài kiểm giả lập)
 
