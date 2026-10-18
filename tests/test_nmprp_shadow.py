@@ -310,11 +310,11 @@ class TestKhopHienThi(unittest.TestCase):
         self.assertEqual(r["chap_nhan"], [])
 
     def test_duong_dan_goc_cua_nut_khac_van_bi_loai(self):
-        # verbatim text from ANOTHER node's own `duong` (the frame's separator): it exists in the frame, but it
-        # does not belong to N1, so it must not tie the PL2 to N1
+        # verbatim text from ANOTHER node's own `duong` (the frame's separator): it exists in the frame, but it is
+        # neither in the PL2 name nor in N1's text, so the first guard already rejects it
         r = self.kiem(["Hệ nội tiết › Tuyến giáp › Rạch"])
         self.assertEqual(r["chap_nhan"], [])
-        self.assertIn("khong co doan trich nao thuoc", r["bo"][0]["ly_do_bo"])
+        self.assertIn("nguyen van hop le", r["bo"][0]["ly_do_bo"])
 
     def test_chi_trich_ten_pl2_van_bi_loai(self):
         r = self.kiem(["Phẫu thuật cắt bán phần 1 thùy tuyến giáp"])
