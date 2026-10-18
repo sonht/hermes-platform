@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+import unittest.mock
 
 from support import nmprp_may_chay as mc
 from support import nmprp_shadow as sh
@@ -27,7 +28,12 @@ class FakeNmprp:
     def __init__(self, ai=True, dung_o_lan=None, ly_do="HUY"):
         self.ai, self.goi, self.dung_o_lan, self.ly_do, self.n_tien_do = ai, [], dung_o_lan, ly_do, 0
 
-    def ai_cong_tac_bat(self):
+    def ai_cong_tac_bat(self, chiu_loi_mang=False):
+        self.chiu_loi_mang = chiu_loi_mang
+        if isinstance(self.ai, Exception):
+            if chiu_loi_mang:
+                raise self.ai
+            return False
         return self.ai
 
     def khung(self):
@@ -135,6 +141,59 @@ class TestChayLuot(unittest.TestCase):
         c.may_tien_do = lambda *a, **k: {"ok": True, "dung": True, "ly_do_dung": "HET_GOI"} if a[2:3] and "lo_xong" in (a[2] if len(a) > 2 else k.get("tien_do", {})) else {"ok": True, "dung": False}
         self.assertEqual(mc.xu_ly_luot(c, luot(ds_pl2=PL2[:1], han_goi=1), cau_hinh(), run), "XONG")
 
+    def test_huy_den_trong_luc_goi_mo_hinh_thi_khong_gui_gi_ve(self):
+        # tien-do thứ 4 (sau lời gọi) là chỗ ĐẦU TIÊN máy thấy lệnh huỷ: không được gửi gợi ý/kết quả của lô đó
+        c, run = FakeNmprp(dung_o_lan=4, ly_do="HUY"), runner_tra(tra_loi("6.1", "6.2"))
+        self.assertEqual(mc.xu_ly_luot(c, luot(), cau_hinh(), run), "DA_HUY")
+        self.assertEqual(len(run.goi) // 2, 1)
+        self.assertEqual(c.loai("goi_y"), [])
+        self.assertEqual(c.loai("ket_qua"), [])
+
+    def test_het_goi_hay_het_token_sau_loi_goi_van_gui_ket_qua_da_tra_tien(self):
+        # HET_GOI do chính lời gọi vừa xong gây ra: kết quả đã trả tiền phải được gửi, rồi mới tạm dừng ở lô kế
+        class DungTu4(FakeNmprp):                                                       # máy chủ nhắc dừng từ báo cáo thứ 4 trở đi
+            def may_tien_do(self, *a, **k):
+                r = FakeNmprp.may_tien_do(self, *a, **k)
+                return {"ok": True, "dung": True, "ly_do_dung": self.ly_do} if self.n_tien_do >= 4 else r
+        for ly in ("HET_GOI", "HET_TOKEN"):
+            c, run = DungTu4(ly_do=ly), runner_tra(tra_loi("6.1", "6.2"))
+            self.assertEqual(mc.xu_ly_luot(c, luot(), cau_hinh(), run), "TAM_DUNG", ly)
+            self.assertEqual([r["pl2_code"] for r in c.loai("ket_qua")[0][1]], ["6.1", "6.2"], ly)
+            self.assertEqual(len(run.goi) // 2, 1)
+
+    def test_loi_goi_duoc_ghi_nhan_truoc_khi_goi_mo_hinh(self):
+        # máy chết sau khi Hermes trả lời mà chưa báo được: lần gọi phải đã được tính từ TRƯỚC, kẻo khởi động lại gọi (và trả tiền) lần nữa
+        class Chet(FakeNmprp):
+            def may_tien_do(self, luot_id, buoc=None, tien_do=None, thong_diep=None):
+                if buoc and "KIEM_DINH" in buoc:
+                    raise NmprpError("POST /admin/hermes/may/luot/HL_x/tien-do: HTTP 502")
+                return FakeNmprp.may_tien_do(self, luot_id, buoc, tien_do, thong_diep)
+        c = Chet()
+        with self.assertRaises(NmprpError):
+            mc.xu_ly_luot(c, luot(tien_do={"lan_goi": 2}, han_goi=3), cau_hinh(), runner_tra(tra_loi("6.1", "6.2")))
+        truoc_goi = [g[2] for g in c.loai("tien_do") if "SUY_LUAN" in g[1] and g[1]["SUY_LUAN"]["tt"] == "DANG"]
+        self.assertEqual(truoc_goi[0]["lan_goi"], 3)                                # đã đặt chỗ lần gọi thứ 3 trước khi gọi
+        # lần khởi động lại: nhận lại lượt với lan_goi=3, han_goi=3 ⇒ không được gọi thêm
+        run2 = runner_tra(tra_loi("6.1", "6.2"))
+        self.assertEqual(mc.xu_ly_luot(FakeNmprp(), luot(tien_do={"lan_goi": 3}, han_goi=3), cau_hinh(), run2), "TAM_DUNG")
+        self.assertEqual(run2.goi, [])
+
+    def test_muc_suy_luan_mac_dinh_cung_phai_nam_trong_danh_sach(self):
+        c, run = FakeNmprp(), runner_tra(tra_loi("6.1", "6.2"))
+        # lượt không chọn mức ⇒ chạy ở "low"; máy chỉ cho "high" ⇒ phải từ chối, không lặng lẽ chạy "low"
+        self.assertEqual(mc.xu_ly_luot(c, luot(suy_luan=""), cau_hinh(suy_luan=("high",)), run), "LOI")
+        self.assertEqual(run.goi, [])
+        run2 = runner_tra(tra_loi("6.1", "6.2"))
+        self.assertEqual(mc.xu_ly_luot(FakeNmprp(), luot(suy_luan=""), cau_hinh(suy_luan=("low", "high")), run2), "XONG")
+        self.assertEqual(run2.goi[0][run2.goi[0].index("--reasoning") + 1], "low")
+
+    def test_cong_tac_ai_loi_mang_thi_thu_lai_khong_tam_dung(self):
+        c = FakeNmprp(ai=NmprpError("GET /admin/ai/status: HTTP 502"))
+        with self.assertRaises(NmprpError):
+            mc.xu_ly_luot(c, luot(), cau_hinh(), runner_tra(tra_loi("6.1")))
+        self.assertEqual(c.loai("ket_thuc"), [])                                      # lượt vẫn DANG_CHAY
+        self.assertTrue(c.chiu_loi_mang)
+
     def test_mo_hinh_ngoai_danh_sach_bi_tu_choi_truoc_khi_goi(self):
         c, run = FakeNmprp(), runner_tra(tra_loi("6.1"))
         kq = mc.xu_ly_luot(c, luot(mo_hinh="model-la"), cau_hinh(mo_hinh=("model-a",)), run)
@@ -219,6 +278,16 @@ class TestVong(unittest.TestCase):
         ngu = []
         mc.chay_mai(C, cau_hinh(tep_dung="/khong/co/tep"), nhip=1, ngu=ngu.append, nhip_tim=False, so_vong=2)
         self.assertEqual(ngu, [2, 1])                                              # lỗi ⇒ chờ gấp đôi, rồi vòng sau bình thường
+
+    def test_mot_lan_loi_mang_thi_that_bai_khong_thoat_ma_0(self):
+        class C:
+            def may_chao(self, *a): raise NmprpError("POST /admin/hermes/may/chao: HTTP 502")
+        with self.assertRaises(NmprpError):
+            mc.chay_mai(C, cau_hinh(tep_dung="/khong/co/tep"), nhip=1, ngu=lambda s: None, nhip_tim=False, so_vong=1, mot_lan=True)
+        cfg = cau_hinh(tep_dung="/khong/co/tep")
+        with unittest.mock.patch.object(mc, "CauHinh") as ch, unittest.mock.patch.object(mc, "NmprpClient", C):
+            ch.tu_moi_truong.return_value = cfg
+            self.assertEqual(mc.main(["--mot-lan"]), 2)
 
     def test_cau_hinh_tu_moi_truong(self):
         c = mc.CauHinh.tu_moi_truong({"HERMES_RUNNER_MODELS": "a, b ,", "HERMES_RUNNER_REASONING": "low,bogus,high",

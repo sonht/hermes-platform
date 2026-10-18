@@ -183,6 +183,19 @@ class ClientTest(unittest.TestCase):
             STATE["ai"], STATE["ai_code"] = ai, code
             self.assertFalse(self.client().ai_cong_tac_bat(), (ai, code))      # lỗi/thiếu/lạ ⇒ TẮT
 
+    def test_ai_cong_tac_chiu_loi_mang_nem_loi_con_cong_tac_tat_van_la_false(self):
+        c = self.client()
+        STATE["ai_code"] = 500
+        self.assertFalse(c.ai_cong_tac_bat())                                       # mặc định (shadow): lỗi ⇒ TẮT
+        with self.assertRaises(NmprpError):
+            c.ai_cong_tac_bat(chiu_loi_mang=True)                                   # máy chạy: lỗi mạng ⇒ ném để thử lại
+        STATE["ai_code"], STATE["ai"] = 200, {"ok": True, "cong_tac": False}
+        self.assertFalse(c.ai_cong_tac_bat(chiu_loi_mang=True))                     # tắt thật ⇒ False, không ném
+        STATE["ai"] = {"ok": True}
+        self.assertFalse(c.ai_cong_tac_bat(chiu_loi_mang=True))                     # thiếu trường ⇒ vẫn TẮT
+        STATE["ai"] = {"ok": True, "cong_tac": True}
+        self.assertTrue(c.ai_cong_tac_bat(chiu_loi_mang=True))
+
     def test_phan_hoi_doc_theo_con_tro_du_trang_va_giu_ma_nguyen_van(self):
         rows, cur = self.client().phan_hoi_moi(limit=2)
         self.assertEqual([r["goi_y_id"] for r in rows], ["HG_00", "HG_01", "HG_02", "HG_03", "HG_04"])

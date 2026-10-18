@@ -181,14 +181,20 @@ class NmprpClient:
     def pl2_pl1_map(self, code):
         return self.get("/review/map", kind="pl1", code=code)
 
-    def ai_cong_tac_bat(self) -> bool:
+    def ai_cong_tac_bat(self, chiu_loi_mang: bool = False) -> bool:
         """NMPRP's global AI switch. FAIL-CLOSED: any error, missing field or non-True value means OFF.
 
         The switch only stops model calls made INSIDE NMPRP; Hermes calls its model itself, so the pilot job
-        MUST call this first and stop when it is False."""
+        MUST call this first and stop when it is False.
+
+        `chiu_loi_mang=True` (the run runner): a transport/HTTP failure is RAISED instead of turned into OFF, so a brief
+        outage is retried by the caller rather than read as "the switch is off". A missing field or a non-True value is
+        still OFF."""
         try:
             return self.get("/admin/ai/status").get("cong_tac") is True
         except NmprpError:
+            if chiu_loi_mang:
+                raise
             return False
 
     def phan_hoi(self, sau="", limit=200):
