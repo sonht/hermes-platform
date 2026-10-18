@@ -1,0 +1,52 @@
+{
+  "id": "register",
+  "intent": "register",
+  "title": "Đăng ký tài khoản dm.kcb.vn",
+  "keywords": [
+    "đăng ký",
+    "tạo tài khoản"
+  ],
+  "steps": [
+    "Mở https://dm.kcb.vn và chọn Đăng ký tại khu vực tài khoản.",
+    "Chọn luồng đăng ký phù hợp: Gmail hoặc chuyên gia theo yêu cầu của đơn vị.",
+    "Điền thông tin được yêu cầu; hồ sơ chuyên gia có thể cần công văn.",
+    "Gửi đăng ký và chờ xét duyệt/kích hoạt trước khi truy cập chức năng có phân quyền."
+  ],
+  "failure_modes": [
+    "Hồ sơ đang chờ xét duyệt: chưa truy cập được chức năng có phân quyền cho đến khi được kích hoạt."
+  ],
+  "source_paths": [
+    "frontend/src/ApiClients.jsx",
+    "frontend/src/App.cham.test.jsx",
+    "frontend/src/AttachmentManager.jsx",
+    "frontend/src/AuthAdmin.jsx",
+    "frontend/src/AuthAdmin.test.jsx",
+    "frontend/src/AuthAdminBoCuc.test.jsx",
+    "frontend/src/BanBienTap.apngay.test.jsx",
+    "frontend/src/BanBienTap.dua.test.jsx",
+    "frontend/src/BanBienTap.gia.test.jsx",
+    "frontend/src/BanBienTap.jsx",
+    "frontend/src/BanBienTap.subtab.test.jsx",
+    "frontend/src/BanBienTap.tachcap.test.jsx",
+    "frontend/src/BanBienTap.tenday.test.jsx",
+    "frontend/src/BanBienTap.test.jsx",
+    "frontend/src/BanBienTap.trunglap.test.jsx",
+    "frontend/src/BanBienTap.tuongduong.test.jsx",
+    "frontend/src/CatalogAdmin.jsx",
+    "frontend/src/CatalogAdminNhatKy.test.jsx",
+    "frontend/src/CatalogTree.dangDangKy.test.jsx",
+    "frontend/src/CatalogTree.jsx",
+    "frontend/src/CayPhanNhomAIRuns.test.jsx",
+    "frontend/src/CayPhanNhomNap.jsx",
+    "frontend/src/CayPhanNhomTab.test.jsx",
+    "frontend/src/DangKyChuyenGia.jsx",
+    "frontend/src/DangKyChuyenGia.test.jsx",
+    "frontend/src/DangKyGmail.jsx",
+    "frontend/src/DangKyGmail.test.jsx",
+    "frontend/src/DangKyGmailCongVanTuyChon.test.jsx",
+    "frontend/src/DangKyPhanQuyen.test.jsx",
+    "frontend/src/DangKyThuatNgu.jsx"
+  ],
+  "source_commit": "b299ac3abbf5fd249975ebcddc53986cd452cdbb",
+  "verification_status": "chua-xac-minh"
+}

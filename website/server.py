@@ -7,19 +7,23 @@ from pathlib import Path
 import json
 import hmac
 import os
+import re
 import sys
-import time
 import threading
-from collections import defaultdict, deque
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT.parent))
 from support.user_journey_builder import build_journey
 from support.hermes_gateway import ask_hermes
+from support.knowledge import NO_ANSWER, find_entry, load_entries, render_answer
+from website.registry import AppRegistry
+from website.ratelimit import RateLimiter
 
-_public_lock = threading.Lock()
-_public_requests = defaultdict(deque)
+APPS = AppRegistry.load(os.environ.get("HERMES_APPS_FILE", ROOT / "apps.json"))
+LIMITER = RateLimiter()
 _public_slots = threading.BoundedSemaphore(2)
+_SESSION_OK = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_PUBLIC_MAX_BYTES = 8192
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -31,41 +35,97 @@ class Handler(SimpleHTTPRequestHandler):
             return
         return super().do_GET()
 
-    def do_POST(self):
-        if self.path not in ("/api/chat", "/api/public/chat"):
+    def _cors_origin(self):
+        """Origin header if it belongs to at least one registered app, else None."""
+        origin = self.headers.get("Origin")
+        # Preflight has no body, so the app is unknown: accept any registered origin.
+        if origin is not None and any(APPS.origin_allowed(key, origin) for key in APPS._apps):
+            return origin
+        return None
+
+    def do_OPTIONS(self):
+        if self.path != "/api/public/chat":
             self.send_error(404)
             return
-        public = self.path == "/api/public/chat"
-        if public:
-            # The website is proxied only by local Caddy. Ignore untrusted X-Forwarded-For.
-            peer = self.client_address[0]
-            now = time.monotonic()
-            with _public_lock:
-                times = _public_requests[peer]
-                while times and now - times[0] > 60:
-                    times.popleft()
-                if len(times) >= 5:
-                    self.send_json(429, {"error": "Quá nhiều yêu cầu. Vui lòng thử lại sau."})
-                    return
-                times.append(now)
-            if not _public_slots.acquire(blocking=False):
-                self.send_json(503, {"error": "Hệ thống đang bận. Vui lòng thử lại."})
-                return
-            try:
-                return self.handle_chat(public=True)
-            finally:
-                _public_slots.release()
+        origin = self.headers.get("Origin")
+        allowed = origin is not None and self._cors_origin() == origin
+        self.send_response(204 if allowed else 403)
+        if allowed:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Access-Control-Allow-Methods", "POST")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header("Access-Control-Max-Age", "600")
+            self.send_header("Vary", "Origin")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def do_POST(self):
+        if self.path == "/api/public/chat":
+            return self.handle_public_chat()
+        if self.path != "/api/chat":
+            self.send_error(404)
+            return
         return self.handle_chat(public=False)
 
-    def send_json(self, status, obj):
+    def send_json(self, status, obj, origin=None, headers=None):
         data = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
         self.end_headers()
         self.wfile.write(data)
+
+    def handle_public_chat(self):
+        cors = self._cors_origin()
+        origin = self.headers.get("Origin")
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            return self.send_json(400, {"error": "Yêu cầu không hợp lệ"}, origin=cors)
+        if length < 1:
+            return self.send_json(400, {"error": "Yêu cầu không hợp lệ"}, origin=cors)
+        if length > _PUBLIC_MAX_BYTES:
+            return self.send_json(413, {"error": "Yêu cầu quá lớn"}, origin=cors)
+        try:
+            payload = json.loads(self.rfile.read(length))
+            question = payload["message"]
+            if not isinstance(question, str) or not 1 <= len(question.strip()) <= 2000:
+                raise ValueError("invalid message")
+        except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+            return self.send_json(400, {"error": "Yêu cầu không hợp lệ"}, origin=cors)
+        # `app` is only a lookup key into apps.json; it is never joined into a path.
+        app_id = payload.get("app", "dm")
+        app = APPS.get(app_id)
+        if app is None:
+            return self.send_json(400, {"error": "Ứng dụng không hợp lệ"}, origin=cors)
+        if not APPS.origin_allowed(app_id, origin):
+            return self.send_json(403, {"error": "Nguồn không được phép"})
+        session = payload.get("session", "")
+        session = session if isinstance(session, str) and _SESSION_OK.match(session) else "anon"
+        reason = LIMITER.allow(app_id, session)
+        if reason:
+            headers = {"Retry-After": "60"} if reason in ("session", "app") else None
+            return self.send_json(429, {"error": "Quá nhiều yêu cầu. Vui lòng thử lại sau."},
+                                  origin=cors, headers=headers)
+        if not _public_slots.acquire(blocking=False):
+            return self.send_json(503, {"error": "Hệ thống đang bận. Vui lòng thử lại."}, origin=cors)
+        try:
+            entries = load_entries(ROOT.parent / app["knowledge"])
+            entry = find_entry(entries, question)
+            answer = render_answer(entry) if entry else NO_ANSWER
+        except (OSError, ValueError) as exc:
+            self.log_error("knowledge load failed: %s", type(exc).__name__)
+            return self.send_json(503, {"error": "Kho hướng dẫn chưa sẵn sàng."}, origin=cors)
+        finally:
+            _public_slots.release()
+        return self.send_json(200, {"answer": answer}, origin=cors)
 
     def handle_chat(self, public=False):
         configured = os.environ.get("HERMES_WEB_TOKEN", "")

@@ -1,0 +1,53 @@
+{
+  "id": "login",
+  "intent": "login",
+  "title": "Đăng nhập dm.kcb.vn",
+  "keywords": [
+    "đăng nhập",
+    "login",
+    "google"
+  ],
+  "steps": [
+    "Mở https://dm.kcb.vn và chọn mục đăng nhập.",
+    "Nếu có Gmail, chọn Tiếp tục với Google và chọn tài khoản của bạn.",
+    "Nếu đã được cấp tài khoản không dùng Google, nhập tên đăng nhập và mật khẩu.",
+    "Nếu hệ thống yêu cầu kích hoạt hoặc chưa có quyền, thực hiện hướng dẫn trên màn hình."
+  ],
+  "failure_modes": [
+    "Chưa được cấp quyền hoặc tài khoản chưa kích hoạt: làm theo thông báo trên màn hình hoặc liên hệ bộ phận hỗ trợ."
+  ],
+  "source_paths": [
+    "frontend/src/AIControl.jsx",
+    "frontend/src/AIToggle.test.jsx",
+    "frontend/src/App.cayChiDoc.test.jsx",
+    "frontend/src/App.cham.test.jsx",
+    "frontend/src/App.cptMobilePublic.test.jsx",
+    "frontend/src/App.duongDan.test.jsx",
+    "frontend/src/App.f5GiuCho.test.jsx",
+    "frontend/src/App.menu.test.jsx",
+    "frontend/src/AppTabMacDinhCongKhai.test.jsx",
+    "frontend/src/AttachmentManager.jsx",
+    "frontend/src/AuthAdmin.jsx",
+    "frontend/src/AuthAdmin.test.jsx",
+    "frontend/src/BanBienTap.jsx",
+    "frontend/src/BanChamCongKhai.jsx",
+    "frontend/src/BanChamCongKhaiTuDienDanhTinh.test.jsx",
+    "frontend/src/BaoCaoPhien.jsx",
+    "frontend/src/CatalogAdmin.jsx",
+    "frontend/src/CatalogAdmin.suaTenPl2.test.jsx",
+    "frontend/src/CatalogAdminNhatKy.test.jsx",
+    "frontend/src/CatalogTreeCPT.boKhoiTrong.test.jsx",
+    "frontend/src/CatalogTreeCPT.congKhai.test.jsx",
+    "frontend/src/CatalogTreeCPT.jsx",
+    "frontend/src/CatalogTreeCPT.xuatCanDangNhap.test.jsx",
+    "frontend/src/CayPhanNhomGold.jsx",
+    "frontend/src/CptTreeStudioPhanQuyen.test.jsx",
+    "frontend/src/DangKyChuyenGia.jsx",
+    "frontend/src/DangKyChuyenGia.test.jsx",
+    "frontend/src/DangKyGmail.jsx",
+    "frontend/src/DangKyGmail.test.jsx",
+    "frontend/src/DangNhapLoiVaoChuyenGia.test.jsx"
+  ],
+  "source_commit": "b299ac3abbf5fd249975ebcddc53986cd452cdbb",
+  "verification_status": "chua-xac-minh"
+}
