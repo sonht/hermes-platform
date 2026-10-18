@@ -15,6 +15,17 @@ hermes.kcb.vn {
 	handle_path /agent/* {
 		@agent_not_tailnet not remote_ip 100.64.0.0/10 fd7a:115c:a1e0::/48
 		respond @agent_not_tailnet 403
+		# The SPA has a client route /docs (Documentation) that collides with FastAPI's Swagger UI
+		# at /docs. Swagger loads an absolute /openapi.json, which Caddy sends to the Platform (404).
+		# Serve the SPA shell for /docs so the page the nav link means is the one that loads.
+		# Only with a session cookie present: without one the request must reach the dashboard
+		# untouched so the login redirect keeps next=/agent/docs. (A present-but-expired cookie
+		# still lands on the dashboard root after login.)
+		@spa_docs {
+			path /docs /docs/
+			header_regexp Cookie hermes_session_at=
+		}
+		rewrite @spa_docs /
 		reverse_proxy 127.0.0.1:19119 {
 			header_up X-Forwarded-Prefix /agent
 		}
