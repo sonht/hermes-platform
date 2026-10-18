@@ -7,6 +7,7 @@ Format follows Keep a Changelog; versions follow Semantic Versioning.
 ## [Unreleased]
 
 ### Added
+- Run runner `support/nmprp_may_chay.py` for the NMPRP «Hermes Agent» tab (polls NMPRP's run queue, runs the profile per batch, sends suggestions and per-PL2 results, pauses on call/token budget); `goi_hermes` takes optional model and reasoning level; client allowlist gains the six queue paths (`docs/NMPRP_HERMES_MAY_CHAY.md`). Not deployed; only simulated tests so far.
 - Shadow run for one PL2 chapter (`support/nmprp_shadow.py`, run on the host as `python3 -m support.nmprp_shadow`): reads NMPRP (GET only), asks the `nmprp-mapping` profile through `hermes -z` (tool group `skills`, no terminal/web), validates every answer (branch key must exist in the frame, quotes must be verbatim, no CPT-like strings, max 3 per PL2) and writes local files. Never sends anything to NMPRP. Default is a dry run; token budget instead of dollars because Hermes reports no cost for this model.
 - Profile `nmprp-mapping` installed on Rocky 2026-10-18 (empty profile via `hermes profile create`, knowledge files copied as user `hermes`, gateway stopped, no cron); verified steps recorded in `hermes/profiles/nmprp-mapping/README.md`.
 - Read-only NMPRP API client for Hermes pilot (allowlist, CPT-code stripping, offline tests) and access runbook (`docs/NMPRP_HERMES_API_ACCESS.md`). Not connected to dm.kcb.vn yet.
