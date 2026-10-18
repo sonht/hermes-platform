@@ -1,8 +1,10 @@
-"""Client for the NMPRP (dm.kcb.vn) API, for Hermes pilot jobs: reads (incl. reviewer feedback) plus TWO narrow writes.
+"""Client for the NMPRP (dm.kcb.vn) API, for Hermes pilot jobs: reads (incl. reviewer feedback) plus narrow writes.
 
 Design rules (see docs/NMPRP_HERMES_API_ACCESS.md):
 - Only GET requests after login, plus POST to exactly /admin/hermes/goi-y and /admin/hermes/su-kien
-  (unreviewed suggestions into NMPRP's own tables) and /admin/auth/login. Nothing else can be written.
+  (unreviewed suggestions into NMPRP's own tables), the six queue endpoints of the run runner
+  (/admin/hermes/may/chao, /may/nhan and /may/luot/<HL_id>/{tien-do,goi-y,ket-qua,ket-thuc}; see
+  docs/NMPRP_HERMES_MAY_CHAY.md) and /admin/auth/login. Nothing else can be written.
 - Path allowlist; everything else is refused BEFORE any network call.
 - CPT codes are AMA-copyrighted. By DEFAULT they must never reach a model, memory or log:
   /admin/cpt-tree/khung/ma-cpt and review kind=cpt are refused, and the keys listed in
@@ -27,6 +29,10 @@ LOGIN_PATH = "/admin/auth/login"
 _ALLOWED_POST = (
     re.compile(r"^/admin/hermes/goi-y$"),
     re.compile(r"^/admin/hermes/su-kien$"),
+    # run queue (runner only): NMPRP never calls out, the runner polls these. The run id is HL_ + 12 hex digits (as NMPRP issues them), nothing else.
+    re.compile(r"^/admin/hermes/may/chao$"),
+    re.compile(r"^/admin/hermes/may/nhan$"),
+    re.compile(r"^/admin/hermes/may/luot/HL_[0-9a-f]{12}/(tien-do|goi-y|ket-qua|ket-thuc)$"),
 )
 _CPT_GET = (
     (re.compile(r"^/admin/cpt-tree/khung/ma-cpt$"), None),
@@ -175,14 +181,20 @@ class NmprpClient:
     def pl2_pl1_map(self, code):
         return self.get("/review/map", kind="pl1", code=code)
 
-    def ai_cong_tac_bat(self) -> bool:
+    def ai_cong_tac_bat(self, chiu_loi_mang: bool = False) -> bool:
         """NMPRP's global AI switch. FAIL-CLOSED: any error, missing field or non-True value means OFF.
 
         The switch only stops model calls made INSIDE NMPRP; Hermes calls its model itself, so the pilot job
-        MUST call this first and stop when it is False."""
+        MUST call this first and stop when it is False.
+
+        `chiu_loi_mang=True` (the run runner): a transport/HTTP failure is RAISED instead of turned into OFF, so a brief
+        outage is retried by the caller rather than read as "the switch is off". A missing field or a non-True value is
+        still OFF."""
         try:
             return self.get("/admin/ai/status").get("cong_tac") is True
         except NmprpError:
+            if chiu_loi_mang:
+                raise
             return False
 
     def phan_hoi(self, sau="", limit=200):
@@ -216,3 +228,25 @@ class NmprpClient:
 
     def post_su_kien(self, loai, chi_tiet=""):
         return self.post("/admin/hermes/su-kien", {"loai": loai, "chi_tiet": chi_tiet})
+
+    # Run queue (used by support.nmprp_may_chay) ---------------------------------------------------
+    def may_chao(self, phien_ban, mo_hinh, suy_luan):
+        return self.post("/admin/hermes/may/chao", {"phien_ban": phien_ban, "mo_hinh": list(mo_hinh), "suy_luan": list(suy_luan)})
+
+    def may_nhan(self):
+        return self.post("/admin/hermes/may/nhan", {})
+
+    def may_tien_do(self, luot_id, buoc=None, tien_do=None, thong_diep=None):
+        body = {"buoc": buoc or {}, "tien_do": tien_do or {}}
+        if thong_diep is not None:
+            body["thong_diep"] = thong_diep
+        return self.post("/admin/hermes/may/luot/%s/tien-do" % luot_id, body)
+
+    def may_goi_y(self, luot_id, items):
+        return self.post("/admin/hermes/may/luot/%s/goi-y" % luot_id, {"items": items})
+
+    def may_ket_qua(self, luot_id, pl2):
+        return self.post("/admin/hermes/may/luot/%s/ket-qua" % luot_id, {"pl2": pl2})
+
+    def may_ket_thuc(self, luot_id, trang_thai, thong_diep=""):
+        return self.post("/admin/hermes/may/luot/%s/ket-thuc" % luot_id, {"trang_thai": trang_thai, "thong_diep": thong_diep})

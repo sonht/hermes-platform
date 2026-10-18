@@ -28,7 +28,7 @@ class H(BaseHTTPRequestHandler):
         SEEN.append(("POST", self.path, self.headers.get("Authorization"), body))
         if self.path == "/admin/auth/login" and body.get("password") == "pw":
             self._send(200, {"ok": True, "token": "tok%d" % len(SEEN)})
-        elif self.path in ("/admin/hermes/goi-y", "/admin/hermes/su-kien") and \
+        elif (self.path in ("/admin/hermes/goi-y", "/admin/hermes/su-kien") or self.path.startswith("/admin/hermes/may/")) and \
                 (self.headers.get("Authorization") or "").startswith("Bearer tok"):
             self._send(200, {"ok": True, "da_ghi": len(body.get("items", []))})
         else:
@@ -144,6 +144,37 @@ class ClientTest(unittest.TestCase):
                 c.post(path, {})
         self.assertEqual(SEEN, [])
 
+    def test_hang_doi_may_chay_di_dung_sau_duong_va_khong_them_duong_nao(self):
+        c = self.client()
+        c.may_chao("r@1", ["m"], ["low"])
+        c.may_nhan()
+        c.may_tien_do("HL_0123456789ab", {"DOC": {"tt": "DANG"}}, {"lan_goi": 1}, "dang chay")
+        c.may_goi_y("HL_0123456789ab", [{"pl2_code": "6.10"}])
+        c.may_ket_qua("HL_0123456789ab", [{"pl2_code": "6.10", "muc": "UNRESOLVED"}])
+        c.may_ket_thuc("HL_0123456789ab", "XONG", "ok")
+        posts = [x for x in SEEN if x[0] == "POST" and x[1].startswith("/admin/hermes/may/")]
+        self.assertEqual([x[1] for x in posts], [
+            "/admin/hermes/may/chao", "/admin/hermes/may/nhan", "/admin/hermes/may/luot/HL_0123456789ab/tien-do",
+            "/admin/hermes/may/luot/HL_0123456789ab/goi-y", "/admin/hermes/may/luot/HL_0123456789ab/ket-qua",
+            "/admin/hermes/may/luot/HL_0123456789ab/ket-thuc"])
+        self.assertEqual(posts[3][3]["items"][0]["pl2_code"], "6.10")                  # mã giữ nguyên văn
+        self.assertEqual(posts[2][3]["thong_diep"], "dang chay")
+
+    def test_duong_may_la_hoac_id_khong_phai_luot_bi_tu_choi_truoc_khi_goi_mang(self):
+        c = self.client()
+        for path in ("/admin/hermes/may/luot/HL_0123456789ab/duyet", "/admin/hermes/may/luot/HL_0123456789ab/",
+                     "/admin/hermes/may/luot/HL_0123456789ab/tien-do/../ket-thuc", "/admin/hermes/may/luot/x/tien-do", "/admin/hermes/may/luot/HL_01/tien-do",
+                     "/admin/hermes/may/luot/HL_0123456789abcd/tien-do", "/admin/hermes/may/luot/HL_0123456789AB/tien-do",
+                     "/admin/hermes/may/luot/HL_01/../../goi-y/tien-do", "/admin/hermes/may/luot/HL_0123456789ab/tien-do?x=1",
+                     "/admin/hermes/may/chao/x", "/admin/hermes/may", "/admin/hermes/may/luot", "/admin/hermes/luot",
+                     "/admin/hermes/luot/HL_0123456789ab/chay-tiep", "/admin/hermes/luot/HL_0123456789ab/huy"):
+            with self.assertRaises(NmprpError, msg=path):
+                c.post(path, {})
+        self.assertEqual(SEEN, [])
+        for path in ("/admin/hermes/may", "/admin/hermes/luot", "/admin/hermes/chuong"):   # đọc vẫn là việc của admin, không của Hermes
+            with self.assertRaises(NmprpError, msg=path):
+                c.get(path)
+
     def test_ai_cong_tac_fail_closed(self):
         c = self.client()
         self.assertTrue(c.ai_cong_tac_bat())
@@ -151,6 +182,19 @@ class ClientTest(unittest.TestCase):
                          ({"cong_tac": 1}, 200), ({"detail": "x"}, 500), ({"detail": "x"}, 403)]:
             STATE["ai"], STATE["ai_code"] = ai, code
             self.assertFalse(self.client().ai_cong_tac_bat(), (ai, code))      # lỗi/thiếu/lạ ⇒ TẮT
+
+    def test_ai_cong_tac_chiu_loi_mang_nem_loi_con_cong_tac_tat_van_la_false(self):
+        c = self.client()
+        STATE["ai_code"] = 500
+        self.assertFalse(c.ai_cong_tac_bat())                                       # mặc định (shadow): lỗi ⇒ TẮT
+        with self.assertRaises(NmprpError):
+            c.ai_cong_tac_bat(chiu_loi_mang=True)                                   # máy chạy: lỗi mạng ⇒ ném để thử lại
+        STATE["ai_code"], STATE["ai"] = 200, {"ok": True, "cong_tac": False}
+        self.assertFalse(c.ai_cong_tac_bat(chiu_loi_mang=True))                     # tắt thật ⇒ False, không ném
+        STATE["ai"] = {"ok": True}
+        self.assertFalse(c.ai_cong_tac_bat(chiu_loi_mang=True))                     # thiếu trường ⇒ vẫn TẮT
+        STATE["ai"] = {"ok": True, "cong_tac": True}
+        self.assertTrue(c.ai_cong_tac_bat(chiu_loi_mang=True))
 
     def test_phan_hoi_doc_theo_con_tro_du_trang_va_giu_ma_nguyen_van(self):
         rows, cur = self.client().phan_hoi_moi(limit=2)
