@@ -288,12 +288,15 @@ def kiem_ket_qua(du_lieu, pl2: list, nut: list, bao_gom_phien_ban=PHIEN_BAN):
 
 # --- model call ------------------------------------------------------------------------------------------------
 
-def goi_hermes(prompt: str, ten_usage: str, container=CONTAINER, profile=PROFILE, ky_nang=SKILL, runner=None):
+def goi_hermes(prompt: str, ten_usage: str, container=CONTAINER, profile=PROFILE, ky_nang=SKILL, runner=None,
+               mo_hinh="", suy_luan="low"):
     """One `hermes -z` call in the container as user `hermes`. Returns (answer_text, usage_dict).
     `runner(argv) -> (returncode, stdout)` is injectable for tests."""
     duong = "%s/%s" % (USAGE_DIR, ten_usage)
     argv = ["docker", "exec", "-u", "hermes", container, "hermes", "-p", profile, "-t", "skills",
-            "--reasoning", "low", "--usage-file", duong]
+            "--reasoning", suy_luan, "--usage-file", duong]
+    if mo_hinh:
+        argv += ["-m", mo_hinh]
     if ky_nang:
         argv += ["-s", ky_nang]
     argv += ["-z", prompt]

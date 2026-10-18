@@ -1,0 +1,18 @@
+# EXAMPLE, NOT YET INSTALLED OR TESTED on Rocky (written 18/10/2026). Do not install before reading docs/NMPRP_HERMES_MAY_CHAY.md §4.
+# Runs the NMPRP run runner as user rocky from the repository root. The runner only POLLS NMPRP (no listening port).
+[Unit]
+Description=Hermes run runner for NMPRP (polls dm.kcb.vn)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rocky
+WorkingDirectory=/home/rocky/hermes-platform
+EnvironmentFile=/home/rocky/hermes-platform/deploy/rocky/nmprp-service.env
+ExecStart=/usr/bin/python3 -m support.nmprp_may_chay
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

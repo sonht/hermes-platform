@@ -28,7 +28,7 @@ class H(BaseHTTPRequestHandler):
         SEEN.append(("POST", self.path, self.headers.get("Authorization"), body))
         if self.path == "/admin/auth/login" and body.get("password") == "pw":
             self._send(200, {"ok": True, "token": "tok%d" % len(SEEN)})
-        elif self.path in ("/admin/hermes/goi-y", "/admin/hermes/su-kien") and \
+        elif (self.path in ("/admin/hermes/goi-y", "/admin/hermes/su-kien") or self.path.startswith("/admin/hermes/may/")) and \
                 (self.headers.get("Authorization") or "").startswith("Bearer tok"):
             self._send(200, {"ok": True, "da_ghi": len(body.get("items", []))})
         else:
@@ -143,6 +143,37 @@ class ClientTest(unittest.TestCase):
             with self.assertRaises(NmprpError, msg=path):
                 c.post(path, {})
         self.assertEqual(SEEN, [])
+
+    def test_hang_doi_may_chay_di_dung_sau_duong_va_khong_them_duong_nao(self):
+        c = self.client()
+        c.may_chao("r@1", ["m"], ["low"])
+        c.may_nhan()
+        c.may_tien_do("HL_0123456789ab", {"DOC": {"tt": "DANG"}}, {"lan_goi": 1}, "dang chay")
+        c.may_goi_y("HL_0123456789ab", [{"pl2_code": "6.10"}])
+        c.may_ket_qua("HL_0123456789ab", [{"pl2_code": "6.10", "muc": "UNRESOLVED"}])
+        c.may_ket_thuc("HL_0123456789ab", "XONG", "ok")
+        posts = [x for x in SEEN if x[0] == "POST" and x[1].startswith("/admin/hermes/may/")]
+        self.assertEqual([x[1] for x in posts], [
+            "/admin/hermes/may/chao", "/admin/hermes/may/nhan", "/admin/hermes/may/luot/HL_0123456789ab/tien-do",
+            "/admin/hermes/may/luot/HL_0123456789ab/goi-y", "/admin/hermes/may/luot/HL_0123456789ab/ket-qua",
+            "/admin/hermes/may/luot/HL_0123456789ab/ket-thuc"])
+        self.assertEqual(posts[3][3]["items"][0]["pl2_code"], "6.10")                  # mã giữ nguyên văn
+        self.assertEqual(posts[2][3]["thong_diep"], "dang chay")
+
+    def test_duong_may_la_hoac_id_khong_phai_luot_bi_tu_choi_truoc_khi_goi_mang(self):
+        c = self.client()
+        for path in ("/admin/hermes/may/luot/HL_0123456789ab/duyet", "/admin/hermes/may/luot/HL_0123456789ab/",
+                     "/admin/hermes/may/luot/HL_0123456789ab/tien-do/../ket-thuc", "/admin/hermes/may/luot/x/tien-do", "/admin/hermes/may/luot/HL_01/tien-do",
+                     "/admin/hermes/may/luot/HL_0123456789abcd/tien-do", "/admin/hermes/may/luot/HL_0123456789AB/tien-do",
+                     "/admin/hermes/may/luot/HL_01/../../goi-y/tien-do", "/admin/hermes/may/luot/HL_0123456789ab/tien-do?x=1",
+                     "/admin/hermes/may/chao/x", "/admin/hermes/may", "/admin/hermes/may/luot", "/admin/hermes/luot",
+                     "/admin/hermes/luot/HL_0123456789ab/chay-tiep", "/admin/hermes/luot/HL_0123456789ab/huy"):
+            with self.assertRaises(NmprpError, msg=path):
+                c.post(path, {})
+        self.assertEqual(SEEN, [])
+        for path in ("/admin/hermes/may", "/admin/hermes/luot", "/admin/hermes/chuong"):   # đọc vẫn là việc của admin, không của Hermes
+            with self.assertRaises(NmprpError, msg=path):
+                c.get(path)
 
     def test_ai_cong_tac_fail_closed(self):
         c = self.client()
