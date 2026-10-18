@@ -3,6 +3,10 @@
 # TRUNG TRON CHE DO: nap tep .env bang bash giong het khi chay tay (set -a; . tep; set +a) thay vi EnvironmentFile,
 # vi systemd doc tep .env khac bash (dau nhay, $, khoang trang) va mat khau co ky tu dac biet co the bi doc sai.
 # Chi MOT may chay tai mot thoi diem: dung may chay chay tay (Ctrl+C khi KHONG co luot dang chay) truoc khi bat dich vu.
+# Tu 19/10/2026 may chay TU KHOA mot tep (flock, env HERMES_RUNNER_LOCK, mac dinh /home/rocky/hermes-shadow-out/may-chay.lock):
+# ban thu hai (chay tay hoac dich vu khoi dong nham khi ban truoc con song) tu thoat voi ma 3, KHONG hoi NMPRP, KHONG goi mo
+# hinh. RestartPreventExitStatus=3 duoi day la de dich vu KHONG lap lai mai khi gap dung ma nay (vd ai do con chay tay song
+# song) - no van lap lai binh thuong voi moi loi khac (vd loi xac thuc NmprpError ma 2).
 [Unit]
 Description=Hermes run runner for NMPRP (polls dm.kcb.vn)
 After=network-online.target docker.service
@@ -15,6 +19,7 @@ WorkingDirectory=/home/rocky/hermes-platform
 ExecStart=/bin/bash -c 'set -a; . /home/rocky/hermes-platform/deploy/rocky/nmprp-service.env; set +a; exec /usr/bin/python3 -m support.nmprp_may_chay'
 Restart=on-failure
 RestartSec=30
+RestartPreventExitStatus=3
 
 [Install]
 WantedBy=multi-user.target

@@ -19,6 +19,12 @@ Safety rules:
 - `bang_chung` (quotes) goes to NMPRP inside the suggestions only; it is never printed.
 - A stop file (env HERMES_RUNNER_DUNG, default /home/rocky/hermes-shadow-out/DUNG) makes the runner stop taking work and stop
   saying hello. `hermes pause` stays the emergency stop for everything else.
+- Exactly ONE runner at a time: `main` takes an exclusive, non-blocking `flock(2)` on a lock file (env HERMES_RUNNER_LOCK,
+  default /home/rocky/hermes-shadow-out/may-chay.lock) held on an fd kept open for the life of the process — no stale PID
+  file to clean up, the OS releases the lock the instant the process dies for any reason. A second runner sees the lock
+  taken, prints a message naming the PID of the holder (best effort) and exits with MA_THOAT_DA_CO_MAY_CHAY WITHOUT polling
+  NMPRP even once (this is what the 19/10/2026 incident needed: two runners of the same name both resumed the same
+  DANG_CHAY run and paid for the model twice).
 
 Python 3.9 compatible on purpose (Rocky host).
 
@@ -27,6 +33,7 @@ Run (see the doc):  set -a; . deploy/rocky/nmprp-service.env; set +a; python3 -m
 from __future__ import annotations
 
 import argparse
+import fcntl
 import os
 import re
 import sys
@@ -46,6 +53,9 @@ SUY_LUAN_HERMES = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "
 NHIP_CHAO_GIAY = 60                                          # NMPRP treats a runner as "on duty" for 180 s after its last hello
 NHIP_HOI_VIEC_GIAY = 30
 DUNG_MAC_DINH = "/home/rocky/hermes-shadow-out/DUNG"
+KHOA_MAC_DINH = "/home/rocky/hermes-shadow-out/may-chay.lock"       # canh tep dung mem, env HERMES_RUNNER_LOCK doi duoc
+MA_THOAT_DA_CO_MAY_CHAY = 3                                          # rieng cho systemd RestartPreventExitStatus=
+MA_THOAT_LOI_KHOA = 4                                                 # khong tao/mo duoc tep khoa (vd duong hong, quyen)
 BUOC_DAU_VAO = ("DOC", "CHUAN_BI", "SUY_LUAN", "KIEM_DINH", "GUI")
 
 
@@ -56,11 +66,12 @@ def ghi_nhat_ky(msg: str) -> None:
 class CauHinh:
     """What THIS runner allows. Models are never hard-coded: the operator lists them (empty = the profile's default only)."""
 
-    def __init__(self, mo_hinh=(), suy_luan=SUY_LUAN_MAC_DINH, tep_dung=DUNG_MAC_DINH,
+    def __init__(self, mo_hinh=(), suy_luan=SUY_LUAN_MAC_DINH, tep_dung=DUNG_MAC_DINH, tep_khoa=KHOA_MAC_DINH,
                  container=sh.CONTAINER, profile=sh.PROFILE, ky_nang=sh.SKILL):
         self.mo_hinh = tuple(m for m in mo_hinh if MO_HINH_AN_TOAN.match(m))
         self.suy_luan = tuple(x for x in suy_luan if x in SUY_LUAN_HERMES)
         self.tep_dung = tep_dung
+        self.tep_khoa = tep_khoa
         self.container, self.profile, self.ky_nang = container, profile, ky_nang
 
     @classmethod
@@ -68,7 +79,44 @@ class CauHinh:
         e = os.environ if env is None else env
         ds = lambda k, mac: tuple(x.strip() for x in e.get(k, mac).split(",") if x.strip())      # noqa: E731
         return cls(ds("HERMES_RUNNER_MODELS", ""), ds("HERMES_RUNNER_REASONING", ",".join(SUY_LUAN_MAC_DINH)),
-                   e.get("HERMES_RUNNER_DUNG", DUNG_MAC_DINH))
+                   e.get("HERMES_RUNNER_DUNG", DUNG_MAC_DINH), e.get("HERMES_RUNNER_LOCK", KHOA_MAC_DINH))
+
+
+# --- single-instance lock ---------------------------------------------------------------------------------------
+
+def khoa_mot_lan(duong: str):
+    """Try an exclusive, non-blocking `flock(2)` on `duong`. The lock lives on the returned open file's fd for as long
+    as the caller keeps it referenced (and open) — the OS drops it the instant the fd closes, including on process
+    death of any kind (crash, kill -9, power loss), so there is never a stale PID file to clean up by hand. Returns the
+    open file object on success, or None when some OTHER open file description already holds the lock (two separate
+    `open()` calls on the same path get separate file descriptions even inside the very same process, which is what
+    lets the test suite prove rejection with two real fds without needing a subprocess)."""
+    thu_muc = os.path.dirname(duong)
+    if thu_muc:
+        os.makedirs(thu_muc, exist_ok=True)
+    f = open(duong, "a+")
+    try:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        f.close()
+        return None
+    try:
+        f.seek(0)
+        f.truncate()
+        f.write(str(os.getpid()))
+        f.flush()
+    except OSError:                                               # noqa: BLE001 — holding the lock matters, not this hint
+        pass
+    return f
+
+
+def doc_pid_khoa(duong: str) -> str:
+    """Best-effort read of the PID the current holder wrote, for the message printed when the lock is already taken."""
+    try:
+        with open(duong) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
 
 
 class DungLuot(Exception):
@@ -296,8 +344,18 @@ def main(argv=None):
     ap.add_argument("--nhip", type=int, default=NHIP_HOI_VIEC_GIAY, help="seconds between polls when idle")
     a = ap.parse_args(argv)
     cfg = CauHinh.tu_moi_truong()
-    ghi_nhat_ky("may chay %s: mo hinh cho phep=%s suy luan=%s tep dung=%s" % (PHIEN_BAN, list(cfg.mo_hinh) or "(mac dinh profile)",
-                                                                           list(cfg.suy_luan), cfg.tep_dung))
+    try:
+        khoa = khoa_mot_lan(cfg.tep_khoa)
+    except OSError as e:                                          # thu muc/tep khoa hong (quyen, duong khong phai thu muc...)
+        ghi_nhat_ky("khong the tao hoac mo tep khoa %s: %s - KHONG chay vi khong khoa duoc" % (cfg.tep_khoa, e))
+        return MA_THOAT_LOI_KHOA
+    if khoa is None:                                              # --mot-lan cung di qua day: khong co ngoai le
+        pid = doc_pid_khoa(cfg.tep_khoa)
+        ghi_nhat_ky("da co may chay khac dang chay" + (" (PID %s)" % pid if pid else " (khong doc duoc PID)") +
+                    " - tep khoa %s" % cfg.tep_khoa)
+        return MA_THOAT_DA_CO_MAY_CHAY
+    ghi_nhat_ky("may chay %s: mo hinh cho phep=%s suy luan=%s tep dung=%s tep khoa=%s" % (
+        PHIEN_BAN, list(cfg.mo_hinh) or "(mac dinh profile)", list(cfg.suy_luan), cfg.tep_dung, cfg.tep_khoa))
     try:
         chay_mai(NmprpClient, cfg, nhip=a.nhip, nhip_tim=not a.mot_lan, so_vong=1 if a.mot_lan else None, mot_lan=a.mot_lan)
     except NmprpError as e:
@@ -305,6 +363,8 @@ def main(argv=None):
         return 2
     except KeyboardInterrupt:
         return 0
+    finally:
+        khoa.close()
     return 0
 
 

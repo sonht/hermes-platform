@@ -1,6 +1,11 @@
 import json
 import os
+import re
+import subprocess
+import sys
 import tempfile
+import threading
+import time
 import unittest
 import unittest.mock
 
@@ -367,16 +372,323 @@ class TestVong(unittest.TestCase):
             def may_chao(self, *a): raise NmprpError("POST /admin/hermes/may/chao: HTTP 502")
         with self.assertRaises(NmprpError):
             mc.chay_mai(C, cau_hinh(tep_dung="/khong/co/tep"), nhip=1, ngu=lambda s: None, nhip_tim=False, so_vong=1, mot_lan=True)
-        cfg = cau_hinh(tep_dung="/khong/co/tep")
-        with unittest.mock.patch.object(mc, "CauHinh") as ch, unittest.mock.patch.object(mc, "NmprpClient", C):
-            ch.tu_moi_truong.return_value = cfg
-            self.assertEqual(mc.main(["--mot-lan"]), 2)
+        with tempfile.TemporaryDirectory() as td:
+            cfg = cau_hinh(tep_dung="/khong/co/tep", tep_khoa=os.path.join(td, "may-chay.lock"))
+            with unittest.mock.patch.object(mc, "CauHinh") as ch, unittest.mock.patch.object(mc, "NmprpClient", C):
+                ch.tu_moi_truong.return_value = cfg
+                self.assertEqual(mc.main(["--mot-lan"]), 2)
 
     def test_cau_hinh_tu_moi_truong(self):
         c = mc.CauHinh.tu_moi_truong({"HERMES_RUNNER_MODELS": "a, b ,", "HERMES_RUNNER_REASONING": "low,bogus,high",
                                       "HERMES_RUNNER_DUNG": "/x"})
         self.assertEqual((c.mo_hinh, c.suy_luan, c.tep_dung), (("a", "b"), ("low", "high"), "/x"))
         self.assertEqual(mc.CauHinh.tu_moi_truong({}).mo_hinh, ())                  # không ghi cứng tên mô hình nào
+
+
+class TestKhoaMotLan(unittest.TestCase):
+    """Kiem nguoc thuc: lay khoa bang MOT fd thuc, thu lay lan hai bang fd KHAC (hoac tien trinh con thuc) phai bi
+    tu choi; khoa phai nha khi tien trinh/fd giu thoat."""
+
+    def test_fd_thu_hai_bi_tu_choi_khi_fd_dau_con_giu(self):
+        with tempfile.TemporaryDirectory() as td:
+            duong = os.path.join(td, "con/sau/may-chay.lock")                     # thu muc chua co, phai tu tao
+            giu = mc.khoa_mot_lan(duong)
+            self.assertIsNotNone(giu)
+            try:
+                self.assertIsNone(mc.khoa_mot_lan(duong))                          # fd thu hai, VAN trong tien trinh nay
+            finally:
+                giu.close()
+            self.assertIsNotNone(mc.khoa_mot_lan(duong))                           # fd dau da dong -> nha khoa
+
+    def test_pid_ghi_vao_tep_khoa_doc_lai_duoc(self):
+        with tempfile.TemporaryDirectory() as td:
+            duong = os.path.join(td, "may-chay.lock")
+            giu = mc.khoa_mot_lan(duong)
+            try:
+                self.assertEqual(mc.doc_pid_khoa(duong), str(os.getpid()))
+            finally:
+                giu.close()
+
+    def test_doc_pid_tep_khong_co_khong_loi(self):
+        self.assertEqual(mc.doc_pid_khoa("/khong/co/duong/nay.lock"), "")
+
+    def test_tien_trinh_con_thuc_giu_khoa_thi_tien_trinh_chinh_bi_tu_choi_roi_duoc_khi_con_thoat(self):
+        # kiem ngược THẬT bằng MỘT tiến trình con độc lập (không chỉ fd thứ hai trong tiến trình này)
+        with tempfile.TemporaryDirectory() as td:
+            duong = os.path.join(td, "may-chay.lock")
+            kich_ban = (
+                "import fcntl, os, sys, time\n"
+                "f = open(%r, 'a+')\n" % duong +
+                "fcntl.flock(f.fileno(), fcntl.LOCK_EX)\n"
+                "sys.stdout.write('da-giu\\n'); sys.stdout.flush()\n"
+                "time.sleep(2.0)\n"
+            )
+            con = subprocess.Popen([sys.executable, "-c", kich_ban], stdout=subprocess.PIPE, text=True)
+            try:
+                dong_dau = con.stdout.readline()
+                self.assertEqual(dong_dau.strip(), "da-giu")
+                self.assertIsNone(mc.khoa_mot_lan(duong))                           # bi giu boi TIEN TRINH KHAC that
+                con.wait(timeout=5)
+                for _ in range(50):                                                # cho fd cua tien trinh con thuc dong het
+                    giu = mc.khoa_mot_lan(duong)
+                    if giu is not None:
+                        break
+                    time.sleep(0.1)
+                self.assertIsNotNone(giu, "khoa phai nha khi tien trinh giu da thoat")
+                giu.close()
+            finally:
+                if con.poll() is None:
+                    con.kill()
+                    con.wait()
+
+    def test_cau_hinh_tu_moi_truong_doc_duong_khoa_tu_bien_moi_truong(self):
+        c = mc.CauHinh.tu_moi_truong({"HERMES_RUNNER_LOCK": "/tmp/x/khac.lock"})
+        self.assertEqual(c.tep_khoa, "/tmp/x/khac.lock")
+        self.assertEqual(mc.CauHinh.tu_moi_truong({}).tep_khoa, mc.KHOA_MAC_DINH)   # mac dinh canh tep dung mem
+
+    def test_main_tu_choi_voi_ma_thoat_rieng_khong_hoi_nmprp_khi_khoa_da_bi_giu(self):
+        class ChuaDuocGoi:
+            def may_chao(self, *a):
+                raise AssertionError("main khong duoc hoi NMPRP khi khoa da bi giu")
+        with tempfile.TemporaryDirectory() as td:
+            duong = os.path.join(td, "may-chay.lock")
+            giu = mc.khoa_mot_lan(duong)
+            try:
+                cfg = cau_hinh(tep_dung="/khong/co/tep", tep_khoa=duong)
+                with unittest.mock.patch.object(mc, "CauHinh") as ch, unittest.mock.patch.object(mc, "NmprpClient", ChuaDuocGoi):
+                    ch.tu_moi_truong.return_value = cfg
+                    self.assertEqual(mc.main([]), mc.MA_THOAT_DA_CO_MAY_CHAY)
+            finally:
+                giu.close()
+
+    def test_main_khong_bi_khoa_thi_chay_binh_thuong_va_dong_khoa_khi_thoat(self):
+        with tempfile.TemporaryDirectory() as td:
+            duong = os.path.join(td, "may-chay.lock")
+
+            class C:
+                def may_chao(self, *a): raise NmprpError("POST /admin/hermes/may/chao: HTTP 502")
+            cfg = cau_hinh(tep_dung="/khong/co/tep", tep_khoa=duong)
+            with unittest.mock.patch.object(mc, "CauHinh") as ch, unittest.mock.patch.object(mc, "NmprpClient", C):
+                ch.tu_moi_truong.return_value = cfg
+                self.assertEqual(mc.main(["--mot-lan"]), 2)
+            lai = mc.khoa_mot_lan(duong)                                            # khoa da duoc tra khi main thoat
+            self.assertIsNotNone(lai, "main phai nha khoa truoc khi tra ve")
+            lai.close()
+
+    def test_mot_lan_cung_ton_trong_khoa_qua_argv(self):
+        # yeu cau rieng: --mot-lan khong duoc la ngoai le cua khoa (khac test tren dung argv=[])
+        class ChuaDuocGoi:
+            def may_chao(self, *a):
+                raise AssertionError("--mot-lan van khong duoc hoi NMPRP khi khoa da bi giu")
+        with tempfile.TemporaryDirectory() as td:
+            duong = os.path.join(td, "may-chay.lock")
+            giu = mc.khoa_mot_lan(duong)
+            try:
+                cfg = cau_hinh(tep_dung="/khong/co/tep", tep_khoa=duong)
+                with unittest.mock.patch.object(mc, "CauHinh") as ch, unittest.mock.patch.object(mc, "NmprpClient", ChuaDuocGoi):
+                    ch.tu_moi_truong.return_value = cfg
+                    self.assertEqual(mc.main(["--mot-lan"]), mc.MA_THOAT_DA_CO_MAY_CHAY)
+            finally:
+                giu.close()
+
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _env_hai_tien_trinh(td, **extra):
+    """Bien moi truong AN TOAN cho subprocess thuc: tep khoa/dung o trong `td` (KHONG BAO GIO dung mac dinh
+    /home/rocky/... trong bai kiem), va NMPRP gia (URL khong goi mang thuc, tu choi ket noi ngay)."""
+    env = dict(os.environ)
+    env.update({
+        "HERMES_RUNNER_LOCK": os.path.join(td, "may-chay.lock"),
+        "HERMES_RUNNER_DUNG": os.path.join(td, "KHONG_CO_TEP_DUNG"),
+        "NMPRP_BASE_URL": "http://127.0.0.1:1",            # port 1: tu choi ket noi ngay, khong cham mang thuc
+        "NMPRP_SERVICE_USER": "x",
+        "NMPRP_SERVICE_PASSWORD": "y",
+    })
+    env.update(extra)
+    return env
+
+
+def _cho_tien_trinh_giu_khoa(proc, han_giay=10):
+    """Doc stdout cua tien trinh cho toi khi thay dong log xac nhan NO DA QUA buoc khoa va dang chay (khong
+    phai doan bi tu choi) - tranh dua (race) giua lam test va thoi diem tien trinh thuc giu duoc flock.
+
+    Doc trong LUONG PHU: `readline()` cua `subprocess.PIPE` la goi CHAN (blocking) - neu tien trinh con treo
+    MA KHONG in gi them (vd mot loi hang truoc dong log mong doi), ban than `readline()` khong co han gio rieng
+    nen vong lap `while time.time() < han` khong bao gio duoc kiem tra lai; ca bai kiem se treo vo han du da
+    co `han_giay`. Luong phu chi lam viec doc, dua tung dong vao queue; luong chinh cho co han bang
+    `queue.get(timeout=...)` nen LUON thoat dung han du tien trinh con im lang hoan toan."""
+    import queue as _queue
+
+    hang = _queue.Queue()
+
+    def _doc():
+        try:
+            for dong in iter(proc.stdout.readline, ""):
+                hang.put(dong)
+                if not dong:
+                    break
+        except (ValueError, OSError):
+            pass
+
+    luong = threading.Thread(target=_doc, daemon=True)
+    luong.start()
+    han = time.time() + han_giay
+    while time.time() < han:
+        try:
+            dong = hang.get(timeout=max(0.05, han - time.time()))
+        except _queue.Empty:
+            break
+        if not dong:
+            if proc.poll() is not None:
+                break
+            continue
+        if "tep khoa=" in dong:                           # dung dong log NGAY SAU khi khoa_mot_lan() thanh cong
+            return dong
+    return None
+
+
+class TestKhoaThucTeHaiTienTrinh(unittest.TestCase):
+    """KIEM NGUOC THAT bang hai tien trinh `python3 -m support.nmprp_may_chay` doc lap (khong mock subprocess),
+    dung NMPRP gia (URL tu choi ket noi) de khong cham mang thuc nao."""
+
+    def _tien_trinh_dau(self, td):
+        duong_khoa = os.path.join(td, "may-chay.lock")                 # phai khop _env_hai_tien_trinh
+        p = subprocess.Popen([sys.executable, "-m", "support.nmprp_may_chay", "--nhip", "1"],
+                              cwd=REPO_ROOT, env=_env_hai_tien_trinh(td), stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, text=True)
+        dong = _cho_tien_trinh_giu_khoa(p)
+        self.assertIsNotNone(dong, "tien trinh dau phai bao da qua khoa va dang chay")
+        self.assertIsNone(p.poll(), "tien trinh dau phai con song luc nay")
+        # bat dot bien doc sai ten bien moi truong (HERMES_RUNNER_LOCK): neu may chay doc nham bien khac, no roi
+        # ve KHOA_MAC_DINH that (/home/rocky/...) thay vi duong trong `td` - dong log phai neu dung duong trong `td`
+        self.assertIn(duong_khoa, dong, "dong log 'tep khoa=' phai neu dung duong khoa trong thu muc tam (td)")
+        self.assertNotIn("/home/rocky/hermes-shadow-out/may-chay.lock", dong,
+                          "khong duoc roi ve duong khoa mac dinh thuc - nghia la bien moi truong bi doc sai ten")
+        return p
+
+    def _dung(self, p):
+        if p.poll() is None:
+            p.kill()
+            p.wait(timeout=5)
+
+    def test_ban_thu_hai_thoat_ma_3_kem_pid_ban_dau_van_giu_khoa(self):
+        with tempfile.TemporaryDirectory() as td:
+            dau = self._tien_trinh_dau(td)
+            try:
+                hai = subprocess.run([sys.executable, "-m", "support.nmprp_may_chay", "--mot-lan"],
+                                      cwd=REPO_ROOT, env=_env_hai_tien_trinh(td), capture_output=True,
+                                      text=True, timeout=10)
+                self.assertEqual(hai.returncode, mc.MA_THOAT_DA_CO_MAY_CHAY)
+                self.assertIn("da co may chay khac dang chay", hai.stdout)
+                self.assertIn(str(dau.pid), hai.stdout, "thong bao phai neu dung PID cua ban dang giu khoa")
+                self.assertIsNone(dau.poll(), "ban dau phai VAN con giu khoa, khong bi anh huong boi ban thu hai")
+            finally:
+                self._dung(dau)
+
+    def test_khoa_tu_nha_khi_tien_trinh_giu_bi_kill_9_khong_ket_pid_cu(self):
+        with tempfile.TemporaryDirectory() as td:
+            dau = self._tien_trinh_dau(td)
+            dau.kill()                                    # SIGKILL = kill -9, tien trinh KHONG the tu don (khong try/except nao chay)
+            dau.wait(timeout=5)
+            self.assertIsNotNone(dau.poll())
+            # khoa phai nha NGAY (muc OS, khong phu thuoc code don dep) - mot ban moi phai qua duoc buoc khoa
+            # (loi mang NMPRP sau do la mong doi, khong phai ma 3 "da co may chay khac")
+            hai = subprocess.run([sys.executable, "-m", "support.nmprp_may_chay", "--mot-lan"],
+                                  cwd=REPO_ROOT, env=_env_hai_tien_trinh(td), capture_output=True,
+                                  text=True, timeout=10)
+            self.assertNotEqual(hai.returncode, mc.MA_THOAT_DA_CO_MAY_CHAY,
+                                 "khoa phai duoc nha khi tien trinh giu bi kill -9, khong ket lai may chay cu")
+            self.assertNotIn("da co may chay khac dang chay", hai.stdout)
+
+    def test_mot_lan_thuc_qua_module_cung_bi_tu_choi_khi_dang_bi_khoa(self):
+        # --mot-lan (khong phai vong lap chinh) cua MOT TIEN TRINH THAT cung phai bi tu choi dung cach
+        with tempfile.TemporaryDirectory() as td:
+            dau = self._tien_trinh_dau(td)
+            try:
+                hai = subprocess.run([sys.executable, "-m", "support.nmprp_may_chay", "--mot-lan"],
+                                      cwd=REPO_ROOT, env=_env_hai_tien_trinh(td), capture_output=True,
+                                      text=True, timeout=10)
+                self.assertEqual(hai.returncode, mc.MA_THOAT_DA_CO_MAY_CHAY)
+            finally:
+                self._dung(dau)
+
+
+class TestThuMucKhoaHong(unittest.TestCase):
+    """Yeu cau: thu muc/tep khoa khong tao/mo duoc (vd mot thanh phan duong dan la TEP, khong phai thu muc) thi
+    bao loi RO RANG va thoat voi ma hop ly - KHONG traceback tran, KHONG chay ma khong co khoa."""
+
+    def _duong_hong(self, td):
+        # mot thanh phan giua duong dan la TEP thuong (khong phai thu muc) -> os.makedirs khong the tao con duoi no,
+        # loi nay xay ra ca khi chay bang root (khac loi quyen thu muc, thu khong gia lap duoc trong sandbox nay)
+        notadir = os.path.join(td, "day_la_tep_khong_phai_thu_muc")
+        open(notadir, "w").close()
+        return os.path.join(notadir, "con", "may-chay.lock")
+
+    def test_khoa_mot_lan_nem_oserror_ro_rang_khong_am_tham_tra_none(self):
+        with tempfile.TemporaryDirectory() as td:
+            with self.assertRaises(OSError):
+                mc.khoa_mot_lan(self._duong_hong(td))
+
+    def test_main_tra_ma_rieng_khong_phai_0_2_3_khong_nem_loi_ra_ngoai(self):
+        with tempfile.TemporaryDirectory() as td:
+            cfg = cau_hinh(tep_dung="/khong/co/tep", tep_khoa=self._duong_hong(td))
+
+            class ChuaDuocGoi:
+                def may_chao(self, *a):
+                    raise AssertionError("khong duoc chay toi NMPRP khi chua co khoa")
+            with unittest.mock.patch.object(mc, "CauHinh") as ch, unittest.mock.patch.object(mc, "NmprpClient", ChuaDuocGoi):
+                ch.tu_moi_truong.return_value = cfg
+                ma = mc.main([])                            # KHONG duoc nem ra ngoai (khong traceback tran)
+            self.assertNotIn(ma, (0, 2, 3), "ma thoat cua loi-khoa-hong khong duoc trung ma khac trong main()")
+
+    def test_tien_trinh_thuc_bao_loi_ro_khong_traceback_tran_khong_chay(self):
+        with tempfile.TemporaryDirectory() as td:
+            env = _env_hai_tien_trinh(td, HERMES_RUNNER_LOCK=self._duong_hong(td))
+            p = subprocess.run([sys.executable, "-m", "support.nmprp_may_chay", "--mot-lan"],
+                                cwd=REPO_ROOT, env=env, capture_output=True, text=True, timeout=10)
+            toan_bo = p.stdout + p.stderr
+            self.assertNotIn("Traceback (most recent call last)", toan_bo)
+            self.assertNotEqual(p.returncode, 0, "khong duoc bao thanh cong khi khong khoa duoc")
+            self.assertNotIn(p.returncode, (2, 3))
+            self.assertNotIn("tep khoa=", toan_bo, "khong duoc chay (qua buoc khoa) khi khong tao/mo duoc tep khoa")
+
+
+class TestTepMauDichVuSystemd(unittest.TestCase):
+    """Yeu cau: ExecStart dung module may chay, RestartPreventExitStatus=3 co mat, va ma 3 khong trung bat ky
+    ma thoat KHAC ma main() co the tra ve - de dich vu KHONG lap lai mai khi gap dung ma "da co may chay khac",
+    nhung VAN lap lai binh thuong voi moi ma loi khac."""
+
+    def _noi_dung(self):
+        duong = os.path.join(REPO_ROOT, "deploy", "rocky", "hermes-nmprp-may-chay.service.example")
+        with open(duong, encoding="utf-8") as f:
+            return f.read()
+
+    def test_execstart_goi_dung_module_may_chay(self):
+        tx = self._noi_dung()
+        self.assertIn("ExecStart=", tx)
+        m = re.search(r"^ExecStart=(.+)$", tx, re.M)
+        self.assertIsNotNone(m)
+        # khop CHINH XAC ten module (khong phai chi substring - "nmprp_may_chay_khac" cung chua chuoi nay)
+        mo = re.search(r"python3\s+-m\s+(\S+)", m.group(1))
+        self.assertIsNotNone(mo, "phai goi python3 -m <module>")
+        self.assertEqual(mo.group(1).rstrip("'\""), "support.nmprp_may_chay")
+        self.assertIn("exec ", m.group(1), "phai exec python3 de systemd theo dung PID (khong qua bash con)")
+
+    def test_restart_prevent_exit_status_3_co_mat(self):
+        tx = self._noi_dung()
+        self.assertRegex(tx, re.compile(r"^RestartPreventExitStatus=3\s*$", re.M), "phai co dung dong nay trong [Service]")
+        dong_chi_thi = [d for d in tx.splitlines() if d.startswith("RestartPreventExitStatus=")]
+        self.assertEqual(len(dong_chi_thi), 1, "chi dung MOT dong chi thi thuc su (comment giai thich khong tinh)")
+
+    def test_ma_3_khong_trung_ma_thoat_khac_trong_main(self):
+        # cac ma thoat THAT main() co the tra ve, lay tu hang so (khong doan bang doc van ban nguon vi 3/4 duoc
+        # tra ve qua ten hang so MA_THOAT_..., khong phai so nguyen tran trong code)
+        self.assertEqual(mc.MA_THOAT_DA_CO_MAY_CHAY, 3, "tep mau dich vu ghim cung so 3, doi hang so thi phai doi ca tep mau")
+        ma_khac = {0, 2, mc.MA_THOAT_LOI_KHOA}                        # 0=xong/KeyboardInterrupt, 2=loi mang NMPRP
+        self.assertNotIn(mc.MA_THOAT_DA_CO_MAY_CHAY, ma_khac, "ma 'da co may chay khac' khong duoc trung ma thoat nao khac")
+        self.assertEqual(len({0, 2, mc.MA_THOAT_DA_CO_MAY_CHAY, mc.MA_THOAT_LOI_KHOA}), 4, "bon ma thoat phai doi mot rieng")
 
 
 class TestMaNguon(unittest.TestCase):
