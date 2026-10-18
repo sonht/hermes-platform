@@ -274,6 +274,96 @@ class TestChanDoan(unittest.TestCase):
                 self.assertEqual(json.loads(f.read()), kq)
 
 
+def nut_that():
+    """One node shaped like the real frame: the frame's own `duong` uses another separator than the prompt's " > "."""
+    kh = {"ok": True, "khung": [{"khoa": "C", "cap": "chuong", "vi": "Hệ nội tiết", "khoa_nhanh": "", "la_nut_tan": False,
+          "con": [{"khoa": "T", "cap": "he", "vi": "Tuyến giáp", "khoa_nhanh": "", "la_nut_tan": False, "con": [
+              {"khoa": "X", "cap": "vung", "vi": "Cắt bỏ", "duong": "Hệ nội tiết › Tuyến giáp › Cắt bỏ",
+               "khoa_nhanh": "Endocrine System > Thyroid Gland > Excision", "la_nut_tan": True, "con": []},
+              {"khoa": "R", "cap": "vung", "vi": "Rạch", "duong": "Hệ nội tiết › Tuyến giáp › Rạch",
+               "khoa_nhanh": "Endocrine System > Thyroid Gland > Incision", "la_nut_tan": True, "con": []}]}]}]}
+    return sh.thu_nut_tan(kh)
+
+
+class TestKhopHienThi(unittest.TestCase):
+    """Real failure 18/10/2026: the model quoted the header chain as it was shown ("A > B > leaf"), and the check
+    compared it with the frame's own `duong`, which joins differently, so every valid proposal was rejected."""
+    nut = nut_that()
+    pl2 = [{"code": "6.3", "name": "Phẫu thuật cắt bán phần 1 thùy tuyến giáp"}]
+
+    def kiem(self, trich, nut="N1"):
+        return sh.kiem_ket_qua({"ket_qua": [tot("6.3", "", trich, nut=nut)]}, self.pl2, self.nut)["6.3"]
+
+    def test_duong_dan_dung_nhu_da_hien_thi_cho_mo_hinh_duoc_nhan(self):
+        r = self.kiem(["Phẫu thuật cắt bán phần 1 thùy tuyến giáp", "Hệ nội tiết > Tuyến giáp > Cắt bỏ"])
+        self.assertEqual(len(r["chap_nhan"]), 1)
+        self.assertEqual(r["chap_nhan"][0]["branch_key"], "Endocrine System > Thyroid Gland > Excision")
+
+    def test_prompt_that_su_hien_thi_duong_dan_noi_bang_dau_lon(self):
+        p = sh.khoi_nut(self.nut)
+        self.assertIn("## Hệ nội tiết > Tuyến giáp", p)
+        self.assertIn("N1 Cắt bỏ", p)
+
+    def test_duong_dan_cua_nut_khac_van_bi_loai(self):
+        # N1 is "Cắt bỏ"; quoting the path of the OTHER node ("Rạch") must not tie the PL2 to N1
+        r = self.kiem(["Hệ nội tiết > Tuyến giáp > Rạch"])
+        self.assertEqual(r["chap_nhan"], [])
+
+    def test_duong_dan_goc_cua_nut_khac_van_bi_loai(self):
+        # verbatim text from ANOTHER node's own `duong` (the frame's separator): it exists in the frame, but it
+        # does not belong to N1, so it must not tie the PL2 to N1
+        r = self.kiem(["Hệ nội tiết › Tuyến giáp › Rạch"])
+        self.assertEqual(r["chap_nhan"], [])
+        self.assertIn("khong co doan trich nao thuoc", r["bo"][0]["ly_do_bo"])
+
+    def test_chi_trich_ten_pl2_van_bi_loai(self):
+        r = self.kiem(["Phẫu thuật cắt bán phần 1 thùy tuyến giáp"])
+        self.assertEqual(r["chap_nhan"], [])
+
+    def test_trich_bia_van_bi_loai(self):
+        r = self.kiem(["Hệ nội tiết > Tuyến giáp > Cắt phăng"])
+        self.assertEqual(r["chap_nhan"], [])
+
+
+class TestKiemLai(unittest.TestCase):
+    def tep_tho(self, tmp, noi_dung, k=0):
+        p = os.path.join(tmp, "shadow-6-20261018T000000Z-tho-%d.txt" % k)
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(noi_dung)
+        return p
+
+    def test_kiem_lai_khong_goi_mo_hinh_va_ap_quy_tac_hien_hanh(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            c = FakeClient()
+            kq = {"ket_qua": [tot("6.1", "", ["Cat tuyen giap"], nut="N1")]}
+            tho = self.tep_tho(tmp, "Day la ket qua: " + json.dumps(kq))
+            tom = sh.kiem_lai(c, tho, "6", 3, 3, "r", os.path.join(tmp, "out"))
+            self.assertFalse(tom["goi_mo_hinh"])
+            self.assertFalse(tom["gui_vao_nmprp"])
+            self.assertEqual(tom["so_de_xuat_nhan"], 1)
+            self.assertEqual(c.posts, [])
+            with open(tom["tep"], encoding="utf-8") as f:
+                dong = [json.loads(l) for l in f]
+            self.assertEqual([d["pl2_code"] for d in dong], ["6.1", "6.2", "6.3"])
+
+    def test_ten_tep_sai_dang_thi_dung(self):
+        with self.assertRaises(sh.ShadowStop):
+            sh.kiem_lai(FakeClient(), "/tmp/khong-phai-tep-tho.txt", "6", 3, 3, "r", ".")
+
+    def test_lo_khong_ton_tai_thi_dung(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tho = self.tep_tho(tmp, "{}", k=5)
+            with self.assertRaises(sh.ShadowStop):
+                sh.kiem_lai(FakeClient(), tho, "6", 3, 3, "r", os.path.join(tmp, "out"))
+
+    def test_kiem_lai_khong_dung_runner_hay_docker(self):
+        with open(sh.__file__, encoding="utf-8") as f:
+            src = f.read()
+        ham = src[src.index("def kiem_lai("):src.index("def main(")]
+        for ten in ("goi_hermes", "_chay(", "subprocess", "docker"):
+            self.assertNotIn(ten, ham)
+
+
 class TestKiem(unittest.TestCase):
     nut = sh.thu_nut_tan(KHUNG)
     pl2 = [{"code": "6.1", "name": "Cat tuyen giap toan phan"}, {"code": "6.2", "name": "Cat thuong than"}]
