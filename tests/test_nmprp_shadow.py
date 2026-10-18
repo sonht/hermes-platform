@@ -150,6 +150,94 @@ class TestTuRun(unittest.TestCase):
             self.assertNotIn("retrieval_score", prompt)
 
 
+def khung_lon(so_chuong=5, so_he=6, so_vung=5, so_la=5):
+    """A frame the size of the real one (~750 terminal nodes) with long Vietnamese names."""
+    ds = []
+    for c in range(so_chuong):
+        he_l = []
+        for h in range(so_he):
+            vung_l = []
+            for v in range(so_vung):
+                la_l = [{"khoa": "L%d.%d.%d.%d" % (c, h, v, k), "cap": "phan_vung",
+                         "vi": "Phẫu thuật cắt bỏ tổn thương số %d của vùng %d" % (k, v),
+                         "duong": "Chương phẫu thuật %d > Hệ cơ quan nội tiết %d > Vùng giải phẫu %d > Phân vùng %d" % (c, h, v, k),
+                         "khoa_nhanh": "Surgery %d > Endocrine system %d > Anatomic region %d > Subsection %d" % (c, h, v, k),
+                         "la_nut_tan": True, "ten_nut_tan_vi": "Phẫu thuật cắt bỏ tổn thương số %d" % k, "con": []}
+                        for k in range(so_la)]
+                vung_l.append({"khoa": "V%d.%d.%d" % (c, h, v), "cap": "vung", "vi": "Vùng giải phẫu %d" % v,
+                               "khoa_nhanh": "", "la_nut_tan": False, "con": la_l})
+            he_l.append({"khoa": "H%d.%d" % (c, h), "cap": "he", "vi": "Hệ cơ quan nội tiết %d" % h,
+                         "khoa_nhanh": "", "la_nut_tan": False, "con": vung_l})
+        ds.append({"khoa": "C%d" % c, "cap": "chuong", "vi": "Chương phẫu thuật %d" % c, "khoa_nhanh": "",
+                   "la_nut_tan": False, "con": he_l})
+    return {"ok": True, "khung": ds}
+
+
+class TestPromptGon(unittest.TestCase):
+    def test_nut_tan_co_ma_ngan_va_chuoi_cha(self):
+        nut = sh.thu_nut_tan(KHUNG)
+        self.assertEqual([n["id"] for n in nut], ["N1", "N2"])
+        self.assertEqual(nut[0]["chuoi"], ["Phau thuat", "He noi tiet"])
+
+    def test_ten_cha_chi_ghi_mot_lan(self):
+        p = sh.khoi_nut(sh.thu_nut_tan(KHUNG))
+        self.assertEqual(p.count("## Phau thuat > He noi tiet"), 1)
+        self.assertIn("N1 Tuyen giap", p)
+        self.assertNotIn("Surgery", p)                                       # the long English key is not sent
+
+    def test_khung_cuc_lon_van_nam_trong_gioi_han_byte(self):
+        nut = sh.thu_nut_tan(khung_lon())
+        self.assertGreaterEqual(len(nut), 700)
+        gon = len(sh.dung_prompt([{"code": "6.1", "name": "x"}] * 5, nut).encode("utf-8"))
+        cu = sum(len(("%s | %s\n" % (n["khoa_nhanh"], n["duong"])).encode("utf-8")) for n in nut)
+        self.assertLess(gon, sh.MAX_PROMPT_BYTES)
+        self.assertLess(gon, cu * 0.6)                                       # clearly smaller than the old format
+
+    def test_nut_dung_truoc_pl2_de_lo_thu_hai_dung_lai_bo_nho_dem(self):
+        nut = sh.thu_nut_tan(KHUNG)
+        a = sh.dung_prompt([{"code": "6.1", "name": "a"}], nut)
+        b = sh.dung_prompt([{"code": "6.2", "name": "b"}], nut)
+        i = a.index("</NUT>")
+        self.assertEqual(a[:i], b[:i])                                       # same prefix up to the end of <NUT>
+
+    def test_dry_run_canh_bao_khi_prompt_vuot_gioi_han(self):
+        c = FakeClient()
+        c.khung = lambda: khung_lon(so_chuong=40)
+        c.candidates = lambda *a, **k: {"ok": True, "candidates": [
+            {"pl2_code": "6.1", "ten_pl2": "a", "branch_key": "b"}]}
+        tom = sh.chay(c, chuong="6", toi_da=1, me=1, thu_muc=".", ngu=0, run_id="r")
+        self.assertIn("canh_bao", tom)
+        self.assertGreater(tom["byte_moi_lo"][0], sh.MAX_PROMPT_BYTES)
+
+    def test_dry_run_khung_vua_khong_canh_bao(self):
+        c = FakeClient()
+        c.khung = lambda: khung_lon()
+        c.candidates = lambda *a, **k: {"ok": True, "candidates": [
+            {"pl2_code": "6.1", "ten_pl2": "a", "branch_key": "b"}]}
+        tom = sh.chay(c, chuong="6", toi_da=1, me=1, thu_muc=".", ngu=0, run_id="r")
+        self.assertNotIn("canh_bao", tom)
+
+    def test_tra_ma_ngan_duoc_dich_ve_khoa_nhanh(self):
+        nut = sh.thu_nut_tan(KHUNG)
+        pl2 = [{"code": "6.1", "name": "Cat tuyen giap toan phan"}]
+        r = sh.kiem_ket_qua({"ket_qua": [tot("6.1", "", ["Cat tuyen giap"], nut="N1")]}, pl2, nut)
+        self.assertEqual(r["6.1"]["chap_nhan"][0]["branch_key"], "Surgery > Endocrine > Thyroid")
+
+    def test_ma_ngan_khong_co_thi_bi_bo(self):
+        nut = sh.thu_nut_tan(KHUNG)
+        pl2 = [{"code": "6.1", "name": "Cat tuyen giap toan phan"}]
+        r = sh.kiem_ket_qua({"ket_qua": [tot("6.1", "", ["Cat tuyen giap"], nut="N999")]}, pl2, nut)
+        self.assertEqual(r["6.1"]["chap_nhan"], [])
+        self.assertIn("khong co trong khung", r["6.1"]["bo"][0]["ly_do_bo"])
+
+    def test_trich_chi_tu_ten_pl2_khong_noi_duoc_voi_nut(self):
+        nut = sh.thu_nut_tan(KHUNG)
+        pl2 = [{"code": "6.1", "name": "Cat tuyen giap toan phan"}]
+        # id N2 is the adrenal gland; the quote is about the thyroid, which is not in N2's own text -> rejected
+        r = sh.kiem_ket_qua({"ket_qua": [tot("6.1", "", ["Cat tuyen giap"], nut="N2")]}, pl2, nut)
+        self.assertEqual(r["6.1"]["chap_nhan"], [])
+
+
 class TestKiem(unittest.TestCase):
     nut = sh.thu_nut_tan(KHUNG)
     pl2 = [{"code": "6.1", "name": "Cat tuyen giap toan phan"}, {"code": "6.2", "name": "Cat thuong than"}]
