@@ -14,7 +14,7 @@ NO_ANSWER = ("Chưa có hướng dẫn đã duyệt phù hợp cho câu hỏi n�
 
 def _fold(text):
     text = unicodedata.normalize("NFD", text.replace("đ", "d").replace("Đ", "D"))
-    return "".join(c for c in text if not unicodedata.combining(c)).casefold()
+    return " ".join("".join(c for c in text if not unicodedata.combining(c)).casefold().split())
 
 
 def _validate(obj, source):
