@@ -238,6 +238,42 @@ class TestPromptGon(unittest.TestCase):
         self.assertEqual(r["6.1"]["chap_nhan"], [])
 
 
+class TestChanDoan(unittest.TestCase):
+    nut = sh.thu_nut_tan(KHUNG)
+    pl2 = [{"code": "6.1", "name": "Cat tuyen giap toan phan"}]
+
+    def test_uoc_token_khong_thap_hon_so_do_that(self):
+        # measured on Rocky 18/10/2026: a 43,902-byte prompt cost 32,994 tokens in total
+        p = "x" * 43_902
+        self.assertGreaterEqual(sh.uoc_token(p), 32_994)
+
+    def test_de_xuat_bi_loai_van_giu_doan_trich_de_chan_doan(self):
+        r = sh.kiem_ket_qua({"ket_qua": [tot("6.1", "", ["cat TUYEN giap"], nut="N1")]}, self.pl2, self.nut)
+        bo = r["6.1"]["bo"][0]
+        self.assertEqual(r["6.1"]["chap_nhan"], [])                          # diagnostics never change acceptance
+        self.assertEqual(bo["trich_de_xuat"], ["cat TUYEN giap"])
+
+    def test_co_hoa_thuong_chi_ra_nguyen_nhan_khi_dung_la_do_chu_hoa(self):
+        # N1's own text is "Tuyen giap" / "Cat tuyen giap"; the model quoted it in a different case only
+        r = sh.kiem_ket_qua({"ket_qua": [tot("6.1", "", ["CAT TUYEN GIAP"], nut="N1")]}, self.pl2, self.nut)
+        self.assertEqual(r["6.1"]["chap_nhan"], [])
+        self.assertTrue(r["6.1"]["bo"][0]["khop_neu_bo_qua_hoa_thuong"])
+
+    def test_co_hoa_thuong_sai_khi_doan_trich_khong_lien_quan(self):
+        r = sh.kiem_ket_qua({"ket_qua": [tot("6.1", "", ["hoan toan khac"], nut="N1")]}, self.pl2, self.nut)
+        self.assertFalse(r["6.1"]["bo"][0]["khop_neu_bo_qua_hoa_thuong"])
+
+    def test_cau_tra_loi_goc_duoc_luu(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            kq = {"ket_qua": [tot("6.1", "", ["Cat tuyen giap"], nut="N1")]}
+            tom = sh.chay(FakeClient(), chuong="6", toi_da=3, me=3, thu_muc=tmp, runner=runner_tra(kq), ngu=0,
+                          thuc_hien=True, run_id="r")
+            tho = [f for f in os.listdir(tmp) if "-tho-" in f]
+            self.assertEqual(len(tho), tom["lan_goi"])
+            with open(os.path.join(tmp, tho[0]), encoding="utf-8") as f:
+                self.assertEqual(json.loads(f.read()), kq)
+
+
 class TestKiem(unittest.TestCase):
     nut = sh.thu_nut_tan(KHUNG)
     pl2 = [{"code": "6.1", "name": "Cat tuyen giap toan phan"}, {"code": "6.2", "name": "Cat thuong than"}]

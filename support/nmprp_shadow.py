@@ -36,7 +36,8 @@ SKILL = "nmprp-retrieval-assist"
 USAGE_DIR = "/opt/data/profiles/nmprp-mapping/workspace"
 MAX_PROMPT_BYTES = 100_000          # one argv string; Linux hard limit is 131072
 TOKENS_FIXED = 6_000                # system prompt measured on the smoke run (5,816 cache-write + output)
-CHARS_PER_TOKEN = 2.5               # conservative for Vietnamese
+BYTES_PER_TOKEN = 1.6               # UTF-8 Vietnamese, measured 18/10/2026 (see uoc_token)
+TOKENS_ANSWER = 3_000               # allowance for the JSON answer of one batch
 MAX_PER_PL2 = 3
 MAX_QUOTE = 150
 MAX_QUOTES = 4
@@ -167,7 +168,9 @@ def dung_prompt(pl2: list, nut: list) -> str:
 
 
 def uoc_token(prompt: str) -> int:
-    return int(len(prompt) / CHARS_PER_TOKEN) + TOKENS_FIXED
+    """Conservative total-token estimate for one call: prompt bytes / BYTES_PER_TOKEN + fixed system prompt + an
+    allowance for the answer. Calibrated on ONE real run (43,902 bytes -> 32,994 tokens); re-measure when it drifts."""
+    return int(len(prompt.encode("utf-8")) / BYTES_PER_TOKEN) + TOKENS_FIXED + TOKENS_ANSWER
 
 
 # --- answer validation -----------------------------------------------------------------------------------------
@@ -200,6 +203,14 @@ def tach_json(text: str):
                         break
         i = s.find("{", i + 1)
     return None
+
+
+def _chan_doan_trich(d: dict, van_ban: str) -> dict:
+    """What the model quoted, and whether the quotes would match `van_ban` if letter case were ignored.
+    Diagnostic only: it never changes what is accepted."""
+    qs = [nfc(q).strip()[:MAX_QUOTE] for q in (d.get("bang_chung") or [])[:MAX_QUOTES]]
+    thap = van_ban.lower()
+    return {"trich_de_xuat": qs, "khop_neu_bo_qua_hoa_thuong": any(q and q.lower() in thap for q in qs)}
 
 
 def kiem_ket_qua(du_lieu, pl2: list, nut: list, bao_gom_phien_ban=PHIEN_BAN):
@@ -247,12 +258,14 @@ def kiem_ket_qua(du_lieu, pl2: list, nut: list, bao_gom_phien_ban=PHIEN_BAN):
                 if q and len(q) <= MAX_QUOTE and q in nguon:
                     trich.append(q)
             if not trich:
-                r["bo"].append({"branch_key": bk, "ly_do_bo": "khong co doan trich nguyen van hop le"})
+                r["bo"].append({"branch_key": bk, "ly_do_bo": "khong co doan trich nguyen van hop le",
+                                **_chan_doan_trich(d, nguon)})
                 continue
             # The evidence must TIE the PL2 to THIS node: at least one quote has to come from the node's own text.
             # A quote taken from the PL2 name alone proves nothing about the node.
             if not any(q in van_nut for q in trich):
-                r["bo"].append({"branch_key": bk, "ly_do_bo": "khong co doan trich nao thuoc ten/duong dan cua nut"})
+                r["bo"].append({"branch_key": bk, "ly_do_bo": "khong co doan trich nao thuoc ten/duong dan cua nut",
+                                **_chan_doan_trich(d, van_nut)})
                 continue
             try:
                 tin = float(d.get("do_tin_cay"))
@@ -349,6 +362,8 @@ def chay(client, chuong="6", toi_da=10, me=5, tran_token=120_000, toi_da_lan_goi
                                     runner)
             tom["lan_goi"] += 1
             tom["token_da_dung"] += int(usage.get("total_tokens") or uoc_token(prompt))
+            with open(str(thu_muc / ("shadow-%s-%s-tho-%d.txt" % (chuong, ts, k))), "w", encoding="utf-8") as raw:
+                raw.write(out)
             kq = kiem_ket_qua(tach_json(out), lo_pl2, nut)
             for p in lo_pl2:
                 dong = {"pl2_code": p["code"], "ten": p["name"], "lo": k, "usage_lo": {
