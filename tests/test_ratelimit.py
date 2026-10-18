@@ -53,6 +53,47 @@ class RateLimiterTests(unittest.TestCase):
         self.c.day = "2026-10-19"
         self.assertIsNone(self.rl.allow("dm", "z"))
 
+    def test_rejected_requests_do_not_create_session_entries(self):
+        rl = RateLimiter(per_session=2, per_app=1000, daily_per_app=2,
+                         clock=self.c, today=lambda: self.c.day)
+        rl.allow("dm", "s0")
+        rl.allow("dm", "s1")
+        before = len(rl._session)
+        for i in range(50):
+            self.assertEqual(rl.allow("dm", f"fresh{i}"), "daily")
+        self.assertEqual(len(rl._session), before)
+
+        app_rl = RateLimiter(per_session=2, per_app=3, daily_per_app=1000,
+                             clock=self.c, today=lambda: self.c.day)
+        for s in ("a", "b", "c"):
+            app_rl.allow("dm", s)
+        before = len(app_rl._session)
+        for i in range(50):
+            self.assertEqual(app_rl.allow("dm", f"fresh{i}"), "app")
+        self.assertEqual(len(app_rl._session), before)
+
+    def test_stale_empty_session_keys_are_swept(self):
+        rl = RateLimiter(per_session=5, per_app=2000, daily_per_app=10000,
+                         clock=self.c, today=lambda: self.c.day)
+        for i in range(1100):
+            self.assertIsNone(rl.allow("dm", f"s{i}"))
+        self.assertEqual(len(rl._session), 1100)
+        self.c.t = 61
+        self.assertIsNone(rl.allow("dm", "new"))
+        self.assertEqual(len(rl._session), 1)
+
+    def test_app_rejection_does_not_consume_session_quota(self):
+        rl = RateLimiter(per_session=2, per_app=3, daily_per_app=1000,
+                         clock=self.c, today=lambda: self.c.day)
+        rl.allow("dm", "b")
+        rl.allow("dm", "c")
+        rl.allow("dm", "d")
+        self.assertEqual(rl.allow("dm", "a"), "app")
+        self.c.t = 61
+        self.assertIsNone(rl.allow("dm", "a"))
+        self.assertIsNone(rl.allow("dm", "a"))
+        self.assertEqual(rl.allow("dm", "a"), "session")
+
 
 if __name__ == "__main__":
     unittest.main()
