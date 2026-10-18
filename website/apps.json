@@ -1,0 +1,7 @@
+{
+  "dm": {
+    "name": "dm.kcb.vn",
+    "origins": ["https://dm.kcb.vn", "https://hermes.kcb.vn"],
+    "knowledge": "knowledge/dm"
+  }
+}
