@@ -41,6 +41,7 @@ PHIEN_BAN = "nmprp-may-chay@0.1"
 PHIEN_BAN_GOI_Y = "nmprp-retrieval-assist@may-0.1"          # <= 40 characters (NMPRP limit)
 MO_HINH_AN_TOAN = re.compile(r"^[A-Za-z0-9._:/@-]{1,100}$")
 SUY_LUAN_MAC_DINH = ("low", "medium", "high")
+MUC_SUY_LUAN_MAC_DINH = "low"                                # what `goi_hermes` uses when a run chose no level
 SUY_LUAN_HERMES = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
 NHIP_CHAO_GIAY = 60                                          # NMPRP treats a runner as "on duty" for 180 s after its last hello
 NHIP_HOI_VIEC_GIAY = 30
@@ -114,11 +115,11 @@ def xu_ly_luot(client, luot: dict, cau_hinh: CauHinh, runner=None) -> str:
 
 
 def _kiem_cho_phep(luot: dict, cfg: CauHinh):
-    mh, sl = luot.get("mo_hinh") or "", luot.get("suy_luan") or ""
+    mh, sl = luot.get("mo_hinh") or "", luot.get("suy_luan") or MUC_SUY_LUAN_MAC_DINH
     if mh and (mh not in cfg.mo_hinh or not MO_HINH_AN_TOAN.match(mh)):
         raise DungLuot("LOI", "Mo hinh khong nam trong danh sach may chay cho phep")
-    if sl and sl not in cfg.suy_luan:
-        raise DungLuot("LOI", "Muc suy luan khong nam trong danh sach may chay cho phep")
+    if sl not in cfg.suy_luan:                       # the EFFECTIVE level: an empty choice runs as MUC_SUY_LUAN_MAC_DINH
+        raise DungLuot("LOI", "Muc suy luan %s khong nam trong danh sach may chay cho phep" % sl)
 
 
 def _theo_phan_hoi(rep: dict, con_lo: bool):
@@ -135,7 +136,7 @@ def _theo_phan_hoi(rep: dict, con_lo: bool):
 def _chay_luot(client, luot: dict, cfg: CauHinh, runner):
     luot_id = luot["luot_id"]
     _kiem_cho_phep(luot, cfg)
-    if not client.ai_cong_tac_bat():
+    if not client.ai_cong_tac_bat(chiu_loi_mang=True):          # an outage raises (retried), only an explicit OFF pauses
         raise DungLuot("TAM_DUNG", "Cong tac AI cua NMPRP dang TAT: bat lai roi bam Chay tiep")
     base = luot.get("tien_do") or {}
     lan_goi = int(base.get("lan_goi") or 0)
@@ -170,17 +171,23 @@ def _chay_luot(client, luot: dict, cfg: CauHinh, runner):
             raise DungLuot("TAM_DUNG", "Het so loi goi cua dot")
         if tran and token + sh.uoc_token(prompt) > tran:
             raise DungLuot("TAM_DUNG", "Uoc tinh vuot tran token: nang tran roi bam Chay tiep")
+        # Reserve the call BEFORE it is made: if the runner dies after Hermes answered, the restarted runner sees this call
+        # already counted and cannot make more paid calls than `han_goi` allows (tokens are reported after the call).
+        lan_goi += 1
         rep = client.may_tien_do(luot_id, {"CHUAN_BI": {"tt": "XONG", "ghi_chu": "~%d token" % sh.uoc_token(prompt)},
                                            "SUY_LUAN": {"tt": "DANG", "ghi_chu": "PL2 %s..%s" % (lo[0]["code"], lo[-1]["code"])}},
-                                 {"token_uoc_lo": sh.uoc_token(prompt)})
+                                 {"token_uoc_lo": sh.uoc_token(prompt), "lan_goi": lan_goi})
         _theo_phan_hoi(rep, True)
         out, usage = sh.goi_hermes(prompt, "may-%s-%d.json" % (luot_id, lan_goi), cfg.container, cfg.profile, cfg.ky_nang,
-                                   runner, luot.get("mo_hinh") or "", luot.get("suy_luan") or "low")
-        lan_goi += 1
+                                   runner, luot.get("mo_hinh") or "", luot.get("suy_luan") or MUC_SUY_LUAN_MAC_DINH)
         token += int(usage.get("total_tokens") or sh.uoc_token(prompt))
         kq = sh.kiem_ket_qua(sh.tach_json(out), lo, nut, PHIEN_BAN_GOI_Y)
-        client.may_tien_do(luot_id, {"SUY_LUAN": {"tt": "XONG", "ghi_chu": ""}, "KIEM_DINH": {"tt": "XONG", "ghi_chu": ""},
-                                     "GUI": {"tt": "DANG", "ghi_chu": ""}}, {"lan_goi": lan_goi, "token_da_dung": token})
+        rep = client.may_tien_do(luot_id, {"SUY_LUAN": {"tt": "XONG", "ghi_chu": ""}, "KIEM_DINH": {"tt": "XONG", "ghi_chu": ""},
+                                           "GUI": {"tt": "DANG", "ghi_chu": ""}}, {"lan_goi": lan_goi, "token_da_dung": token})
+        # An admin cancel that arrived DURING the model call is first seen here: stop before publishing anything. Only HUY stops
+        # here: HET_GOI / HET_TOKEN are reached BECAUSE of the call just paid for, whose results must still be published.
+        if isinstance(rep, dict) and rep.get("dung") and rep.get("ly_do_dung") == "HUY":
+            raise DungLuot("DA_HUY", "Admin huy luot")
         items = [g for p in lo for g in kq[p["code"]]["chap_nhan"]]
         if items:
             client.may_goi_y(luot_id, items)
@@ -239,7 +246,7 @@ def mot_vong(client, cfg: CauHinh, runner=None) -> str:
     return xu_ly_luot(client, luot, cfg, runner)
 
 
-def chay_mai(tao_client, cfg: CauHinh, nhip=NHIP_HOI_VIEC_GIAY, ngu=time.sleep, nhip_tim=True, so_vong=None):
+def chay_mai(tao_client, cfg: CauHinh, nhip=NHIP_HOI_VIEC_GIAY, ngu=time.sleep, nhip_tim=True, so_vong=None, mot_lan=False):
     client = tao_client()
     tim = NhipTim(tao_client, cfg) if nhip_tim else None
     if tim:
@@ -251,6 +258,8 @@ def chay_mai(tao_client, cfg: CauHinh, nhip=NHIP_HOI_VIEC_GIAY, ngu=time.sleep, 
             try:
                 kq = mot_vong(client, cfg)
             except NmprpError as e:
+                if mot_lan:
+                    raise                                        # one-shot smoke test: a network failure must FAIL, not exit 0
                 ghi_nhat_ky("loi mang/NMPRP: %s" % e)            # message names path + status only
                 ngu(nhip * 2)
                 continue
@@ -270,7 +279,7 @@ def main(argv=None):
     ghi_nhat_ky("may chay %s: mo hinh cho phep=%s suy luan=%s tep dung=%s" % (PHIEN_BAN, list(cfg.mo_hinh) or "(mac dinh profile)",
                                                                            list(cfg.suy_luan), cfg.tep_dung))
     try:
-        chay_mai(NmprpClient, cfg, nhip=a.nhip, nhip_tim=not a.mot_lan, so_vong=1 if a.mot_lan else None)
+        chay_mai(NmprpClient, cfg, nhip=a.nhip, nhip_tim=not a.mot_lan, so_vong=1 if a.mot_lan else None, mot_lan=a.mot_lan)
     except NmprpError as e:
         print("DUNG: %s" % e)
         return 2
