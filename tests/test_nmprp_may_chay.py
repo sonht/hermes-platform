@@ -246,6 +246,48 @@ class TestChayLuot(unittest.TestCase):
             sh.MAX_PROMPT_BYTES = goc
 
 
+class ServerThat(FakeNmprp):
+    """Answers `dung` the way NMPRP's `cap_nhat` does: HET_GOI as soon as the REPORTED lan_goi reaches han_goi (han_goi > 0), HET_TOKEN
+    when the reported token_da_dung reaches the ceiling. A fake that only returns `dung` at a chosen call number hid the bug where
+    reserving the last allowed call paused the run before the call was made."""
+
+    def __init__(self, han_goi, tran=10 ** 9, **kw):
+        FakeNmprp.__init__(self, **kw)
+        self.han, self.tran, self.lan, self.tok = han_goi, tran, 0, 0
+
+    def may_tien_do(self, luot_id, buoc=None, tien_do=None, thong_diep=None):
+        FakeNmprp.may_tien_do(self, luot_id, buoc, tien_do, thong_diep)
+        td = tien_do or {}
+        self.lan, self.tok = max(self.lan, td.get("lan_goi", 0)), max(self.tok, td.get("token_da_dung", 0))
+        if self.han and self.lan >= self.han:
+            return {"ok": True, "dung": True, "ly_do_dung": "HET_GOI"}
+        if self.tok >= self.tran:
+            return {"ok": True, "dung": True, "ly_do_dung": "HET_TOKEN"}
+        return {"ok": True, "dung": False, "ly_do_dung": ""}
+
+
+class TestMaySachVoiMayChuThat(unittest.TestCase):
+    def test_han_goi_bang_mot_van_goi_dung_mot_lan(self):
+        # lỗi thật 18/10/2026: lượt han_goi=1 tạm dừng sau 2 giây mà CHƯA gọi Hermes lần nào
+        c, run = ServerThat(han_goi=1), runner_tra(tra_loi("6.1"))
+        self.assertEqual(mc.xu_ly_luot(c, luot(han_goi=1, ds_pl2=PL2[:1]), cau_hinh(), run), "XONG")
+        self.assertEqual(len(run.goi) // 2, 1)
+        self.assertEqual([r["pl2_code"] for r in c.loai("ket_qua")[0][1]], ["6.1"])
+
+    def test_han_goi_n_goi_dung_n_lan_roi_tam_dung(self):
+        c, run = ServerThat(han_goi=2), runner_tra(tra_loi("6.1", "6.2", "6.3"))
+        self.assertEqual(mc.xu_ly_luot(c, luot(han_goi=2, me=1), cau_hinh(), run), "TAM_DUNG")
+        self.assertEqual(len(run.goi) // 2, 2)                                      # đúng hai lời gọi, không phải một
+        self.assertEqual([r["pl2_code"] for r in c.loai("ket_qua")[1][1]], ["6.2"])
+
+    def test_het_goi_khong_chan_loi_goi_da_dat_cho_nhung_huy_van_chan(self):
+        c, run = ServerThat(han_goi=1), runner_tra(tra_loi("6.1"))
+        c.may_tien_do_goc = c.may_tien_do
+        c.may_tien_do = lambda *a, **k: {"ok": True, "dung": True, "ly_do_dung": "HUY"} if (a[1:2] and "SUY_LUAN" in (a[1] or {}) and a[1]["SUY_LUAN"]["tt"] == "DANG") else c.may_tien_do_goc(*a, **k)
+        self.assertEqual(mc.xu_ly_luot(c, luot(han_goi=1, ds_pl2=PL2[:1]), cau_hinh(), run), "DA_HUY")
+        self.assertEqual(run.goi, [])
+
+
 class TestVong(unittest.TestCase):
     def test_tep_dung_thi_khong_nhan_viec_va_khong_chao(self):
         with tempfile.NamedTemporaryFile() as f:

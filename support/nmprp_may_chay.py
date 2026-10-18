@@ -177,7 +177,11 @@ def _chay_luot(client, luot: dict, cfg: CauHinh, runner):
         rep = client.may_tien_do(luot_id, {"CHUAN_BI": {"tt": "XONG", "ghi_chu": "~%d token" % sh.uoc_token(prompt)},
                                            "SUY_LUAN": {"tt": "DANG", "ghi_chu": "PL2 %s..%s" % (lo[0]["code"], lo[-1]["code"])}},
                                  {"token_uoc_lo": sh.uoc_token(prompt), "lan_goi": lan_goi})
-        _theo_phan_hoi(rep, True)
+        # Only a cancel may stop us HERE. The server answers HET_GOI as soon as the reported count reaches `han_goi`, which is
+        # exactly what reserving the LAST allowed call does: pausing on it would leave that call unmade (a run with han_goi=1
+        # never called Hermes). The budget was already checked locally BEFORE the reservation.
+        if isinstance(rep, dict) and rep.get("dung") and rep.get("ly_do_dung") == "HUY":
+            raise DungLuot("DA_HUY", "Admin huy luot")
         out, usage = sh.goi_hermes(prompt, "may-%s-%d.json" % (luot_id, lan_goi), cfg.container, cfg.profile, cfg.ky_nang,
                                    runner, luot.get("mo_hinh") or "", luot.get("suy_luan") or MUC_SUY_LUAN_MAC_DINH)
         token += int(usage.get("total_tokens") or sh.uoc_token(prompt))
