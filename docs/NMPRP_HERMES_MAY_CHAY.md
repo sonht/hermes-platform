@@ -44,7 +44,7 @@ cd /home/rocky/hermes-platform && set -a && . deploy/rocky/nmprp-service.env && 
 
 Phải thấy dòng khởi động, không có `DUNG:`; ở tab NMPRP đèn "máy chạy đang trực" bật. (4) Tạo một lượt NHỎ (chương 6, 5 PL2, 1 lời gọi,
 trần token thấp) ở tab rồi chạy `python3 -m support.nmprp_may_chay` (không `--mot-lan`) trong một cửa sổ riêng để xem tận mắt.
-(5) Chỉ sau đó mới cân nhắc chạy nền bằng systemd (`deploy/rocky/hermes-nmprp-may-chay.service.example`, chưa kiểm).
+(5) Chỉ sau đó mới cân nhắc chạy nền bằng systemd — xem `docs/NMPRP_HERMES_MAY_CHAY_NEN.md` (chưa kiểm trên Rocky).
 
 ## 5. Việc chưa làm
 
