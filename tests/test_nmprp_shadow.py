@@ -38,8 +38,13 @@ class FakeClient:
             rows.insert(0, {"code": "16.1", "name": "Mot ky thuat cua chuong khac"})
         return {"ok": True, "rows": rows}
 
-    def candidates(self, run_id, code, **kw):
-        return {"ok": True, "rows": []}
+    def candidates(self, run_id, pl2_code="", **kw):
+        self.runs = getattr(self, "runs", []) + [run_id]
+        # rows are NOT in code order and include another chapter's code, as the real table may
+        c = [{"pl2_code": m, "ten_pl2": PL2.get(m, "Mot ky thuat cua chuong khac"), "branch_key": "Surgery > Endocrine > Thyroid",
+              "retrieval_score": 0.9, "source": "DETERMINISTIC", "review_status": "PENDING"}
+             for m in ("6.3", "16.1", "6.1", "6.1", "6.2")]
+        return {"ok": True, "candidates": c}
 
     def post(self, *a, **k):
         self.posts.append(a)
@@ -90,6 +95,59 @@ class TestNhap(unittest.TestCase):
                                             if q == "6.1" else []}
         ds = sh.liet_ke_pl2(c, "6", 5, ngu=0)
         self.assertEqual([(p["code"], p["name"]) for p in ds], [("6.1", "b")])   # "6.10" is not "6.1"
+
+
+class TestTuRun(unittest.TestCase):
+    def test_lay_pl2_tu_ung_vien_dung_thu_tu_so_va_dung_chuong(self):
+        c = FakeClient()
+        pl2, uv = sh.liet_ke_tu_run(c, "run_x", "6", 10)
+        self.assertEqual([p["code"] for p in pl2], ["6.1", "6.2", "6.3"])      # numeric, not "16.1"
+        self.assertEqual(pl2[0]["name"], PL2["6.1"])
+        self.assertEqual(len(uv["6.1"]), 2)                                      # NMPRP's own candidates kept
+        self.assertEqual(c.searches, [])                                         # no /review/search needed
+
+    def test_thu_tu_so_khong_phai_thu_tu_chuoi(self):
+        self.assertLess(sh._khoa_ma("6.9"), sh._khoa_ma("6.10"))                 # as strings "6.10" < "6.9"
+
+    def test_ma_6_10_dung_sau_6_9_khi_cat_toi_da(self):
+        c = FakeClient()
+        c.candidates = lambda *a, **k: {"ok": True, "candidates": [
+            {"pl2_code": m, "ten_pl2": "n" + m, "branch_key": "b"} for m in ("6.10", "6.2", "6.9")]}
+        pl2, _ = sh.liet_ke_tu_run(c, "run_x", "6", 2)
+        self.assertEqual([p["code"] for p in pl2], ["6.2", "6.9"])               # as strings it would be 6.10, 6.2
+
+    def test_toi_da_cat_theo_thu_tu_so(self):
+        pl2, uv = sh.liet_ke_tu_run(FakeClient(), "run_x", "6", 2)
+        self.assertEqual([p["code"] for p in pl2], ["6.1", "6.2"])
+        self.assertEqual(sorted(uv), ["6.1", "6.2"])
+
+    def test_luot_loi_thi_dung(self):
+        c = FakeClient()
+        c.candidates = lambda *a, **k: {"ok": False, "error": "boom"}
+        with self.assertRaises(sh.ShadowStop):
+            sh.liet_ke_tu_run(c, "run_x", "6", 5)
+
+    def test_chay_voi_run_khong_goi_search_va_ghi_ung_vien_de_so_sanh(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            kq = {"ket_qua": [tot("6.1", "Surgery > Endocrine > Thyroid", ["Cat tuyen giap"])]}
+            c = FakeClient()
+            tom = sh.chay(c, chuong="6", toi_da=3, me=3, thu_muc=tmp, runner=runner_tra(kq), ngu=0,
+                          thuc_hien=True, run_id="run_x")
+            self.assertEqual(c.searches, [])
+            self.assertEqual(c.posts, [])
+            self.assertEqual(tom["nguon_pl2"], "run run_x")
+            with open(tom["tep"], encoding="utf-8") as f:
+                dong = [json.loads(l) for l in f]
+            self.assertEqual(len(dong[0]["ung_vien_nmprp"]), 2)
+
+    def test_ung_vien_nmprp_khong_di_vao_prompt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = runner_tra({"ket_qua": []})
+            sh.chay(FakeClient(), chuong="6", toi_da=3, me=3, thu_muc=tmp, runner=run, ngu=0, thuc_hien=True,
+                    run_id="run_x")
+            prompt = run.goi[0][-1]
+            self.assertNotIn("DETERMINISTIC", prompt)                            # NMPRP's candidates stay out
+            self.assertNotIn("retrieval_score", prompt)
 
 
 class TestKiem(unittest.TestCase):
