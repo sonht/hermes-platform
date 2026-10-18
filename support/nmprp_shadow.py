@@ -140,6 +140,13 @@ def liet_ke_tu_run(client, run_id: str, chuong: str, toi_da: int):
 
 # --- prompt ----------------------------------------------------------------------------------------------------
 
+def van_ban_hien_thi(n: dict) -> str:
+    """Everything the model was shown about node `n` (the joined header chain + its own line) plus the frame's own
+    path/name fields. A verbatim quote must come from THIS text: the model can only quote what it saw, and the
+    prompt joins ancestors with " > " itself, which the frame's own `duong` does not necessarily use."""
+    return "\n".join([" > ".join(n["chuoi"] + [n["vi"]]), n["duong"], n["ten"], n["vi"]])
+
+
 def khoi_nut(nut: list) -> str:
     """The node list as a tree: each ancestor path once as a header, then `id name` per terminal node."""
     dong, hien = [], None
@@ -250,7 +257,7 @@ def kiem_ket_qua(du_lieu, pl2: list, nut: list, bao_gom_phien_ban=PHIEN_BAN):
             if CPT_LIKE.search(van_ban):
                 r["bo"].append({"branch_key": bk, "ly_do_bo": "co chuoi giong ma CPT"})
                 continue
-            van_nut = node["duong"] + "\n" + node["ten"] + "\n" + node["vi"]
+            van_nut = van_ban_hien_thi(node)
             nguon = ten_pl2[ma] + "\n" + van_nut
             trich = []
             for q in (d.get("bang_chung") or [])[:MAX_QUOTES]:
@@ -380,6 +387,37 @@ def chay(client, chuong="6", toi_da=10, me=5, tran_token=120_000, toi_da_lan_goi
     return tom
 
 
+def kiem_lai(client, tep_tho, chuong="6", toi_da=10, me=5, run_id="", thu_muc="."):
+    """Re-validate a SAVED raw answer with the current rules. NO model call, no cost. Needs the same --chuong,
+    --toi-da, --me and --run-id as the original run so that the same PL2 batch is rebuilt."""
+    m = re.search(r"-tho-(\d+)\.txt$", str(tep_tho))
+    if not m:
+        raise ShadowStop("Ten tep khong dung dang shadow-<chuong>-<ts>-tho-<k>.txt: %s" % tep_tho)
+    k = int(m.group(1))
+    nut = thu_nut_tan(client.khung())
+    if not nut:
+        raise ShadowStop("Khong doc duoc nut tan nao tu khung cay CPT.")
+    pl2 = liet_ke_tu_run(client, run_id, str(chuong), int(toi_da))[0] if run_id else liet_ke_pl2(
+        client, str(chuong), int(toi_da), ngu=0)
+    lo = [pl2[i:i + int(me)] for i in range(0, len(pl2), int(me))]
+    if k >= len(lo):
+        raise ShadowStop("Lo %d khong ton tai voi --toi-da/--me da cho (co %d lo)." % (k, len(lo)))
+    with open(str(tep_tho), encoding="utf-8") as f:
+        kq = kiem_ket_qua(tach_json(f.read()), lo[k], nut)
+    thu_muc = Path(thu_muc)
+    thu_muc.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    tep = thu_muc / ("shadow-%s-%s-kiemlai-%d.jsonl" % (chuong, ts, k))
+    with open(str(tep), "w", encoding="utf-8") as f:
+        for p in lo[k]:
+            f.write(json.dumps({"pl2_code": p["code"], "ten": p["name"], "lo": k, "ket_qua": kq[p["code"]]},
+                               ensure_ascii=False) + "\n")
+    return {"che_do": "KIEM_LAI", "tep_tho": str(tep_tho), "lo": k, "so_pl2": len(lo[k]),
+            "so_de_xuat_nhan": sum(len(v["chap_nhan"]) for v in kq.values()),
+            "so_de_xuat_bo": sum(len(v["bo"]) for v in kq.values()), "tep": str(tep), "goi_mo_hinh": False,
+            "gui_vao_nmprp": False}
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Shadow run for one PL2 chapter (never sends anything to NMPRP).")
     ap.add_argument("--chuong", default="6", help="PL2 chapter number (PL2, not PL1)")
@@ -390,11 +428,16 @@ def main(argv=None):
     ap.add_argument("--out", default="shadow-out")
     ap.add_argument("--run-id", default="", help="CPN-AI run id: take PL2 from its candidates (needed when /review/search is not allowed) and keep NMPRP's own candidates for comparison")
     ap.add_argument("--chay", action="store_true", help="really call the model (default: dry run)")
+    ap.add_argument("--kiem-lai", metavar="TEP_THO", default="",
+                    help="re-validate a saved raw answer (shadow-...-tho-<k>.txt) with the current rules: NO model call")
     a = ap.parse_args(argv)
     from support.nmprp_client import NmprpClient
     try:
-        tom = chay(NmprpClient(), a.chuong, a.toi_da, a.me, a.tran_token, a.toi_da_lan_goi, a.chay, a.out,
-                   a.run_id)
+        if a.kiem_lai:
+            tom = kiem_lai(NmprpClient(), a.kiem_lai, a.chuong, a.toi_da, a.me, a.run_id, a.out)
+        else:
+            tom = chay(NmprpClient(), a.chuong, a.toi_da, a.me, a.tran_token, a.toi_da_lan_goi, a.chay, a.out,
+                       a.run_id)
     except ShadowStop as e:
         print("DUNG: %s" % e)
         return 2
