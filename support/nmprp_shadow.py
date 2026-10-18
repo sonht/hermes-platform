@@ -103,6 +103,33 @@ def liet_ke_pl2(client, chuong: str, toi_da: int, ngu=0.15):
     return ra
 
 
+def _khoa_ma(ma: str):
+    """Numeric order of a PL2 code such as "6.71" -> (6, 71); codes stay TEXT everywhere else."""
+    try:
+        return tuple(int(x) for x in str(ma).split("."))
+    except ValueError:
+        return (10 ** 9, str(ma))
+
+
+def liet_ke_tu_run(client, run_id: str, chuong: str, toi_da: int):
+    """PL2 of the chapter taken from a CPN-AI run's candidates (one GET, studio-level). Returns (pl2, uv_theo_ma):
+    pl2 = first `toi_da` codes in numeric order, uv_theo_ma = NMPRP's own candidates per code, kept ONLY to compare
+    with the model later (never shown to the model). PL2 that got no candidate in the run are not visible here."""
+    d = client.candidates(run_id) or {}
+    if d.get("ok") is False:
+        raise ShadowStop("Khong doc duoc ung vien cua luot %s: %s" % (run_id, d.get("error", "")))
+    ten, uv = {}, {}
+    for r in d.get("candidates") or []:
+        ma = str(r.get("pl2_code", "")).strip()
+        if not ma.startswith(chuong + "."):
+            continue
+        ten.setdefault(ma, nfc(r.get("ten_pl2"))[:MAX_NAME])
+        uv.setdefault(ma, []).append({"branch_key": nfc(r.get("branch_key")), "diem": r.get("retrieval_score"),
+                                      "nguon": r.get("source"), "trang_thai": r.get("review_status")})
+    ma_xep = sorted(ten, key=_khoa_ma)[:toi_da]
+    return [{"code": m, "name": ten[m]} for m in ma_xep], {m: uv[m][:5] for m in ma_xep}
+
+
 # --- prompt ----------------------------------------------------------------------------------------------------
 
 def dung_prompt(pl2: list, nut: list) -> str:
@@ -253,11 +280,15 @@ def chay(client, chuong="6", toi_da=10, me=5, tran_token=120_000, toi_da_lan_goi
     nut = thu_nut_tan(client.khung())
     if not nut:
         raise ShadowStop("Khong doc duoc nut tan nao tu khung cay CPT.")
-    pl2 = liet_ke_pl2(client, chuong, int(toi_da), ngu=ngu)
+    if run_id:
+        pl2, uv = liet_ke_tu_run(client, run_id, chuong, int(toi_da))
+    else:
+        pl2, uv = liet_ke_pl2(client, chuong, int(toi_da), ngu=ngu), {}
     if not pl2:
         raise ShadowStop("Khong tim thay PL2 nao cua chuong %s." % chuong)
     lo = [pl2[i:i + int(me)] for i in range(0, len(pl2), int(me))]
-    tom = {"chuong": chuong, "so_pl2": len(pl2), "so_nut_tan": len(nut), "so_lo": len(lo),
+    tom = {"chuong": chuong, "nguon_pl2": ("run " + run_id) if run_id else "review/search",
+           "so_pl2": len(pl2), "so_nut_tan": len(nut), "so_lo": len(lo),
            "che_do": "THUC" if thuc_hien else "DRY_RUN", "phien_ban": PHIEN_BAN, "tran_token": int(tran_token),
            "uoc_token_moi_lo": [], "lan_goi": 0, "token_da_dung": 0, "dung_vi": "", "gui_vao_nmprp": False}
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -291,11 +322,7 @@ def chay(client, chuong="6", toi_da=10, me=5, tran_token=120_000, toi_da_lan_goi
                     "total_tokens": usage.get("total_tokens"), "api_calls": usage.get("api_calls")},
                     "ket_qua": kq[p["code"]]}
                 if run_id:
-                    try:
-                        dong["ung_vien_nmprp"] = json.dumps(client.candidates(run_id, p["code"]),
-                                                            ensure_ascii=False)[:2000]
-                    except Exception as e:      # noqa: BLE001 - comparison data is optional
-                        dong["ung_vien_nmprp"] = "loi: %s" % type(e).__name__
+                    dong["ung_vien_nmprp"] = uv.get(p["code"], [])
                 f.write(json.dumps(dong, ensure_ascii=False) + "\n")
             f.flush()
     tom["tep"] = str(tep)
@@ -313,7 +340,7 @@ def main(argv=None):
     ap.add_argument("--tran-token", type=int, default=120000, help="stop before exceeding this many tokens")
     ap.add_argument("--toi-da-lan-goi", type=int, default=2)
     ap.add_argument("--out", default="shadow-out")
-    ap.add_argument("--run-id", default="", help="optional CPN-AI run id: store NMPRP's own candidates for comparison")
+    ap.add_argument("--run-id", default="", help="CPN-AI run id: take PL2 from its candidates (needed when /review/search is not allowed) and keep NMPRP's own candidates for comparison")
     ap.add_argument("--chay", action="store_true", help="really call the model (default: dry run)")
     a = ap.parse_args(argv)
     from support.nmprp_client import NmprpClient
