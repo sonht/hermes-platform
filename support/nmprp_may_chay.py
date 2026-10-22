@@ -36,6 +36,8 @@ import argparse
 import fcntl
 import os
 import re
+import shlex
+import subprocess
 import sys
 import threading
 import time
@@ -58,6 +60,16 @@ MA_THOAT_DA_CO_MAY_CHAY = 3                                          # rieng cho
 MA_THOAT_LOI_KHOA = 4                                                 # khong tao/mo duoc tep khoa (vd duong hong, quyen)
 BUOC_DAU_VAO = ("DOC", "CHUAN_BI", "SUY_LUAN", "KIEM_DINH", "GUI")
 
+# Profile files declared at hello (NMPRP docs/hermes-agent/CAU_HINH_PROFILE.md §1, QD-11): NMPRP only STORES {ten, sha256},
+# it never reads the files. Same name/sha rules as NMPRP `kiem_profile_tep`, so a bad entry can never make the hello 422.
+THU_MUC_PROFILE = "/opt/data/profiles/%s"
+TEP_PROFILE = ("SOUL.md", "AGENTS.md", "memories/MEMORY.md", "memories/USER.md")
+MAU_TEP_PROFILE = "skills/*/SKILL.md"
+TOI_DA_TEP_PROFILE = 20                                       # NMPRP TRAN_PROFILE_TEP
+RE_TEN_PROFILE = re.compile(r"^[A-Za-z0-9._/-]{1,200}$")      # NMPRP _RE_TEN_PROFILE_TEP
+RE_DONG_SHA = re.compile(r"^([0-9a-fA-F]{64})\s+\*?(\S.*)$")
+GIAY_BAM_PROFILE = 20
+
 
 def ghi_nhat_ky(msg: str) -> None:
     print("%s %s" % (datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), msg), flush=True)
@@ -67,19 +79,21 @@ class CauHinh:
     """What THIS runner allows. Models are never hard-coded: the operator lists them (empty = the profile's default only)."""
 
     def __init__(self, mo_hinh=(), suy_luan=SUY_LUAN_MAC_DINH, tep_dung=DUNG_MAC_DINH, tep_khoa=KHOA_MAC_DINH,
-                 container=sh.CONTAINER, profile=sh.PROFILE, ky_nang=sh.SKILL):
+                 container=sh.CONTAINER, profile=sh.PROFILE, ky_nang=sh.SKILL, khai_profile=False):
         self.mo_hinh = tuple(m for m in mo_hinh if MO_HINH_AN_TOAN.match(m))
         self.suy_luan = tuple(x for x in suy_luan if x in SUY_LUAN_HERMES)
         self.tep_dung = tep_dung
         self.tep_khoa = tep_khoa
         self.container, self.profile, self.ky_nang = container, profile, ky_nang
+        self.khai_profile = bool(khai_profile)                    # declare profile files at hello (on in production)
 
     @classmethod
     def tu_moi_truong(cls, env=None):
         e = os.environ if env is None else env
         ds = lambda k, mac: tuple(x.strip() for x in e.get(k, mac).split(",") if x.strip())      # noqa: E731
         return cls(ds("HERMES_RUNNER_MODELS", ""), ds("HERMES_RUNNER_REASONING", ",".join(SUY_LUAN_MAC_DINH)),
-                   e.get("HERMES_RUNNER_DUNG", DUNG_MAC_DINH), e.get("HERMES_RUNNER_LOCK", KHOA_MAC_DINH))
+                   e.get("HERMES_RUNNER_DUNG", DUNG_MAC_DINH), e.get("HERMES_RUNNER_LOCK", KHOA_MAC_DINH),
+                   khai_profile=e.get("HERMES_RUNNER_KHAI_PROFILE", "1").strip() != "0")
 
 
 # --- single-instance lock ---------------------------------------------------------------------------------------
@@ -277,6 +291,49 @@ def _chay_luot(client, luot: dict, cfg: CauHinh, runner):
     return "XONG"
 
 
+# --- profile files ---------------------------------------------------------------------------------------------
+
+def _chay_ngan(argv):
+    p = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                       universal_newlines=True, timeout=GIAY_BAM_PROFILE)
+    return p.returncode, p.stdout
+
+
+def doc_dong_sha(out: str) -> list:
+    """`sha256sum` output -> [{ten, sha256}] sorted by name, only names NMPRP accepts, no duplicates, at most 20. Pure."""
+    ra, thay = [], set()
+    for dong in (out or "").splitlines():
+        m = RE_DONG_SHA.match(dong.strip())
+        if not m:
+            continue
+        sha, ten = m.group(1).lower(), m.group(2).strip()
+        if ten.startswith("./"):
+            ten = ten[2:]
+        if not RE_TEN_PROFILE.match(ten) or ".." in ten or ten.startswith("/") or ten in thay:
+            continue
+        thay.add(ten)
+        ra.append({"ten": ten, "sha256": sha})
+    ra.sort(key=lambda x: x["ten"])
+    return ra[:TOI_DA_TEP_PROFILE]
+
+
+def khai_profile(cfg, runner=None):
+    """Hash the profile files INSIDE the Hermes container (as user `hermes`, like every other call) and return what the hello
+    declares. NEVER raises: any failure (docker missing, container down, timeout) returns [] and the hello goes out anyway.
+    Missing files are simply absent from the list (sha256sum prints the others). Switched off (`cfg.khai_profile` False,
+    env HERMES_RUNNER_KHAI_PROFILE=0) ⇒ None: the hello body stays exactly the old one."""
+    if not getattr(cfg, "khai_profile", False):
+        return None
+    thu_muc = THU_MUC_PROFILE % cfg.profile
+    lenh = "cd %s && sha256sum %s %s 2>/dev/null; true" % (
+        shlex.quote(thu_muc), " ".join(shlex.quote(t) for t in TEP_PROFILE), MAU_TEP_PROFILE)
+    try:
+        _rc, out = (runner or _chay_ngan)(["docker", "exec", "-u", "hermes", cfg.container, "sh", "-c", lenh])
+        return doc_dong_sha(out)
+    except Exception:                                             # noqa: BLE001 — a missing declaration must not stop the hello
+        return []
+
+
 # --- main loop -------------------------------------------------------------------------------------------------
 
 class NhipTim(threading.Thread):
@@ -293,7 +350,7 @@ class NhipTim(threading.Thread):
                 continue
             try:
                 client = client or self._tao()
-                client.may_chao(PHIEN_BAN, self._cfg.mo_hinh, self._cfg.suy_luan)
+                client.may_chao(PHIEN_BAN, self._cfg.mo_hinh, self._cfg.suy_luan, khai_profile(self._cfg))
             except Exception:                                    # noqa: BLE001 — a missed hello is harmless, the main loop retries
                 client = None
 
@@ -305,7 +362,7 @@ def mot_vong(client, cfg: CauHinh, runner=None) -> str:
     """One poll. Returns "DUNG" (stop file), "KHONG_VIEC", or the final state of the run it processed."""
     if os.path.exists(cfg.tep_dung):
         return "DUNG"
-    client.may_chao(PHIEN_BAN, cfg.mo_hinh, cfg.suy_luan)
+    client.may_chao(PHIEN_BAN, cfg.mo_hinh, cfg.suy_luan, khai_profile(cfg))
     r = client.may_nhan()
     luot = (r or {}).get("luot")
     if not luot:

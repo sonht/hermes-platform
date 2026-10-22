@@ -24,6 +24,10 @@ Một luồng phụ chào mỗi 60 giây bằng client riêng, để lời gọi
 - Lỗi mạng/NMPRP **không** kết thúc lượt: lượt vẫn `DANG_CHAY`, máy chờ gấp đôi rồi hỏi lại và tiếp tục. Lỗi bất ngờ khác: `LOI`,
   thông điệp chỉ ghi TÊN LỚP lỗi (không nội dung, không bằng chứng).
 - Công tắc AI của NMPRP tắt ⇒ `TAM_DUNG` kèm lời nhắn, không gọi mô hình.
+- Từ 22/10/2026: lời chào khai thêm `profile_tep` = `{ten, sha256}` các tệp profile đang cài (`SOUL.md`, `AGENTS.md`,
+  `memories/MEMORY.md`, `memories/USER.md`, `skills/*/SKILL.md`), băm TRONG container bằng `docker exec -u hermes … sha256sum`, tối đa
+  20 tệp, tên lọc theo đúng luật NMPRP `kiem_profile_tep`. Lỗi băm ⇒ gửi `[]`, lời chào vẫn đi. Tắt: `HERMES_RUNNER_KHAI_PROFILE=0`
+  (thân lời chào y như cũ). CHƯA khai năng lực `CAU_HINH_PROFILE` (chưa áp dụng bản cấu hình đã duyệt).
 - Tệp dừng mềm `HERMES_RUNNER_DUNG` (mặc định `/home/rocky/hermes-shadow-out/DUNG`): còn tệp thì không nhận việc, không chào.
   `hermes pause` vẫn là nút dừng khẩn cho mọi thứ khác.
 - Từ 19/10/2026: chỉ MỘT máy chạy một lúc — `main` tự khoá một tệp (`flock(2)` không chặn, env `HERMES_RUNNER_LOCK`, mặc định
