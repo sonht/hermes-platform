@@ -17,6 +17,13 @@ Production-oriented, self-hosted Hermes Agent integration for healthcare termino
 
 ## Status
 
-Repository initialized. **Hermes is not installed or deployed yet.**
+The repository contains the Hermes deployment configuration, the NMPRP M1 host runner, and a reviewed-source skill profile. Repository content alone does not establish the version currently deployed on Rocky.
 
-See `docs/DEPLOYMENT_PLAN.md` on the implementation branch for the rollout plan.
+## NMPRP skills
+
+- [Skill profile and five-skill index](hermes/profiles/nmprp-mapping/README.md).
+- [Installation, verification and rollback](docs/NMPRP_HERMES_SKILLS_INSTALL.md).
+- [Official hermes-agent skill: use, configuration, themes and orchestration](docs/HERMES_AGENT_SKILL.md).
+- [Source versions, checks and handoff](docs/NMPRP_HERMES_SKILLS_RELEASE.md).
+
+The new documents do not install a runtime, publish terminology or approve NMPRP suggestions. Production operation follows the deployment and owner approval procedures.

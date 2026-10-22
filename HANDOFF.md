@@ -1,4 +1,14 @@
-# HANDOFF — dự án NMPRP ⇄ Hermes Agent (cập nhật 17/10/2026)
+# HANDOFF — dự án NMPRP ⇄ Hermes Agent
+
+## Cập nhật 23/10/2026: tài liệu năm skill
+
+Bàn giao hiện hành cho việc hoàn thiện skill: [NMPRP_HERMES_SKILLS_RELEASE.md](docs/NMPRP_HERMES_SKILLS_RELEASE.md).
+Mục lục/cài đặt: [profile](hermes/profiles/nmprp-mapping/README.md) · [runbook](docs/NMPRP_HERMES_SKILLS_INSTALL.md).
+Đã hoàn thiện bốn skill NMPRP cùng references/templates và hướng dẫn dùng skill `hermes-agent` chính thức. Không đổi mã runtime/API hoặc dữ liệu thật; chưa cài bản mới vào Rocky. Nguồn hermes-platform `ec42f109`, NMPRP `0addd2d5`, upstream `41dfcf2c`.
+
+Bộ kiểm offline 206 bài đạt; kiểm hành vi độc lập cho M1, học phản hồi và QA đã thực hiện. Hạn chế vận hành/phiên bản và fingerprint nêu trong tài liệu bàn giao. Những ghi nhận bên dưới là lịch sử ngày 17/10; không dùng danh sách PR dở, số test, quyền/API hoặc trạng thái cài cũ để ghi đè hiện trạng đã đối chiếu.
+
+## Bàn giao lịch sử 17/10/2026
 
 Chủ dự án (sonht) không phải dân IT: trả lời tiếng Việt, ngắn, từng bước. Không dán bí mật, mã CPT, dữ liệu bệnh nhân vào chat hay tệp.
 
