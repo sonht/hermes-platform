@@ -32,13 +32,16 @@ _ALLOWED_POST = (
     # run queue (runner only): NMPRP never calls out, the runner polls these. The run id is HL_ + 12 hex digits (as NMPRP issues them), nothing else.
     re.compile(r"^/admin/hermes/may/chao$"),
     re.compile(r"^/admin/hermes/may/nhan$"),
-    re.compile(r"^/admin/hermes/may/luot/HL_[0-9a-f]{12}/(tien-do|goi-y|ket-qua|ket-thuc)$"),
+    re.compile(r"^/admin/hermes/may/luot/HL_[0-9a-f]{12}/(tien-do|goi-y|ket-qua|ket-thuc|m0-phan-ra|m2-ho|m3-goc|mo-ta-nut)$"),
 )
 _CPT_GET = (
     (re.compile(r"^/admin/cpt-tree/khung/ma-cpt$"), None),
 )
 _ALLOWED_CPT_KINDS = {"cpt"}
 _ALLOWED_GET = (
+    (re.compile(r"^/admin/hermes/may/tri-thuc$"), None),
+    (re.compile(r"^/admin/hermes/may/luot/HL_[0-9a-f]{12}/san-pham-dau-vao$"), None),
+    (re.compile(r"^/admin/hermes/may/luot/HL_[0-9a-f]{12}/nguon-m3$"), None),
     (re.compile(r"^/admin/cpt-tree/khung$"), None),
     (re.compile(r"^/admin/ai/status$"), None),
     (re.compile(r"^/admin/cpn-ai/runs$"), None),
@@ -230,10 +233,12 @@ class NmprpClient:
         return self.post("/admin/hermes/su-kien", {"loai": loai, "chi_tiet": chi_tiet})
 
     # Run queue (used by support.nmprp_may_chay) ---------------------------------------------------
-    def may_chao(self, phien_ban, mo_hinh, suy_luan, profile_tep=None):
+    def may_chao(self, phien_ban, mo_hinh, suy_luan, profile_tep=None, kha_nang=None):
         """Hello. `profile_tep` = [{ten, sha256}] of the profile files installed (NMPRP CAU_HINH_PROFILE.md §1); None = old
         body, byte for byte (the key is not sent at all)."""
         body = {"phien_ban": phien_ban, "mo_hinh": list(mo_hinh), "suy_luan": list(suy_luan)}
+        if kha_nang is not None:
+            body["kha_nang"] = list(kha_nang)
         if profile_tep is not None:
             body["profile_tep"] = list(profile_tep)
         return self.post("/admin/hermes/may/chao", body)
@@ -255,3 +260,22 @@ class NmprpClient:
 
     def may_ket_thuc(self, luot_id, trang_thai, thong_diep=""):
         return self.post("/admin/hermes/may/luot/%s/ket-thuc" % luot_id, {"trang_thai": trang_thai, "thong_diep": thong_diep})
+
+    def may_stage(self, luot_id, endpoint, items):
+        if endpoint not in ('m0-phan-ra', 'm2-ho', 'm3-goc'):
+            raise NmprpError('Refused stage result endpoint')
+        return self.post('/admin/hermes/may/luot/%s/%s' % (luot_id, endpoint), {'items': items})
+
+    def may_mo_ta(self, luot_id, keys, codes):
+        return self.post('/admin/hermes/may/luot/%s/mo-ta-nut' % luot_id,
+                         {'khoa_nhanh': keys, 'pl2_code': codes})
+
+    def may_modifier(self, luot_id):
+        return self.get('/admin/hermes/may/luot/%s/nguon-m3' % luot_id)
+
+    def may_knowledge(self, luot_id):
+        return self.get('/admin/hermes/may/tri-thuc', luot_id=luot_id)
+
+    def may_input_manifest(self, luot_id, snapshot_id):
+        return self.get('/admin/hermes/may/luot/%s/san-pham-dau-vao' % luot_id,
+                        buoc='M1', artifact_id=snapshot_id)
