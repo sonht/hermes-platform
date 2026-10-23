@@ -351,7 +351,8 @@ class TestVong(unittest.TestCase):
             def may_nhan(self): C.goi.append("nhan"); return {"ok": True, "luot": None}
         r = mc.mot_vong(C(), cau_hinh(mo_hinh=("m",), tep_dung="/khong/co/tep"))
         self.assertEqual(r, "KHONG_VIEC")
-        self.assertEqual(C.goi[0], ("chao", (("m",), ("low", "medium", "high"))))   # khai đúng danh sách của chính máy
+        # khai đúng danh sách của chính máy; công tắc khai profile TẮT (mặc định khi dựng CauHinh trực tiếp) ⇒ None = thân cũ
+        self.assertEqual(C.goi[0], ("chao", (("m",), ("low", "medium", "high"), None)))
 
     def test_chay_mai_loi_mang_thi_cho_roi_thu_lai(self):
         lan = []
@@ -697,6 +698,82 @@ class TestMaNguon(unittest.TestCase):
             src = f.read()
         for ten in ("--yolo", "shell=True", "os.system", "post_goi_y(", "/admin/hermes/goi-y", "/duyet"):
             self.assertNotIn(ten, src)
+
+
+SHA_A = "a" * 64
+SHA_B = "B" * 64
+
+
+class TestKhaiProfile(unittest.TestCase):
+    """Máy chạy khai tệp profile khi chào (NMPRP CAU_HINH_PROFILE.md §1). Không bao giờ làm hỏng lời chào."""
+
+    def test_doc_dong_sha_chi_giu_ten_nmprp_nhan_sap_xep_khu_trung(self):
+        out = "\n".join([
+            "%s  SOUL.md" % SHA_B,
+            "%s  ./skills/nmprp-qa-governance/SKILL.md" % SHA_A,
+            "%s  AGENTS.md" % SHA_A,
+            "%s  SOUL.md" % SHA_A,                                  # trùng tên ⇒ giữ dòng đầu
+            "%s  ../ngoai.md" % SHA_A,                              # ".." ⇒ bỏ
+            "%s  co khoang trang.md" % SHA_A,                       # ký tự NMPRP không nhận ⇒ bỏ
+            "sha256sum: memories/USER.md: No such file or directory",
+            "rac",
+        ])
+        ds = mc.doc_dong_sha(out)
+        self.assertEqual([d["ten"] for d in ds], ["AGENTS.md", "SOUL.md", "skills/nmprp-qa-governance/SKILL.md"])
+        self.assertEqual(ds[1]["sha256"], "b" * 64)                  # chữ thường như NMPRP lưu
+        for d in ds:
+            self.assertEqual(set(d), {"ten", "sha256"})
+
+    def test_doc_dong_sha_cat_toi_da_20(self):
+        out = "\n".join("%s  skills/s%02d/SKILL.md" % (SHA_A, i) for i in range(30))
+        self.assertEqual(len(mc.doc_dong_sha(out)), mc.TOI_DA_TEP_PROFILE)
+
+    def test_khai_profile_goi_docker_exec_dung_nguoi_dung_va_thu_muc(self):
+        seen = []
+
+        def runner(argv):
+            seen.append(argv)
+            return 0, "%s  SOUL.md\n" % SHA_A
+        ds = mc.khai_profile(cau_hinh(khai_profile=True, container="c1", profile="nmprp-mapping"), runner=runner)
+        self.assertEqual(ds, [{"ten": "SOUL.md", "sha256": SHA_A}])
+        self.assertEqual(seen[0][:6], ["docker", "exec", "-u", "hermes", "c1", "sh"])
+        self.assertIn("/opt/data/profiles/nmprp-mapping", seen[0][-1])
+        self.assertIn("skills/*/SKILL.md", seen[0][-1])
+
+    def test_khai_profile_mot_tep_khong_doc_duoc_thi_ca_khai_bao_la_rong(self):
+        # Codex P2: danh sách THIẾU một tệp có mặt nhưng không băm được là khai báo sai ⇒ phải trả [], không trả một phần.
+        def mot_tep_hong(argv):
+            return 1, "%s  SOUL.md\nFAIL AGENTS.md\n" % SHA_A
+        self.assertEqual(mc.khai_profile(cau_hinh(khai_profile=True), runner=mot_tep_hong), [])
+
+    def test_khai_profile_tep_vang_mat_thi_bo_qua_khong_coi_la_loi(self):
+        def vang_mat(argv):
+            return 0, "%s  SOUL.md\n" % SHA_A          # AGENTS.md và các tệp tuỳ chọn khác không có ⇒ không có dòng FAIL
+        self.assertEqual(mc.khai_profile(cau_hinh(khai_profile=True), runner=vang_mat),
+                         [{"ten": "SOUL.md", "sha256": SHA_A}])
+
+    def test_khai_profile_loi_thi_tra_rong_khong_nem(self):
+        def hong(argv):
+            raise FileNotFoundError("docker")
+        self.assertEqual(mc.khai_profile(cau_hinh(khai_profile=True), runner=hong), [])
+
+    def test_khai_profile_tat_thi_none_va_khong_goi_docker(self):
+        def cam(argv):
+            raise AssertionError("khong duoc goi docker khi cong tac tat")
+        self.assertIsNone(mc.khai_profile(cau_hinh(khai_profile=False), runner=cam))
+
+    def test_moi_truong_mac_dinh_bat_va_tat_bang_0(self):
+        self.assertTrue(mc.CauHinh.tu_moi_truong({}).khai_profile)
+        self.assertFalse(mc.CauHinh.tu_moi_truong({"HERMES_RUNNER_KHAI_PROFILE": "0"}).khai_profile)
+
+    def test_mot_vong_gui_profile_tep_trong_loi_chao(self):
+        class C:
+            goi = []
+            def may_chao(self, *a): C.goi.append(a)
+            def may_nhan(self): return {"ok": True, "luot": None}
+        with unittest.mock.patch.object(mc, "_chay_ngan", lambda argv: (0, "%s  AGENTS.md\n" % SHA_A)):
+            mc.mot_vong(C(), cau_hinh(khai_profile=True, tep_dung="/khong/co/tep"))
+        self.assertEqual(C.goi[0][3], [{"ten": "AGENTS.md", "sha256": SHA_A}])
 
 
 if __name__ == "__main__":

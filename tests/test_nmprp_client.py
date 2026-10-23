@@ -144,6 +144,14 @@ class ClientTest(unittest.TestCase):
                 c.post(path, {})
         self.assertEqual(SEEN, [])
 
+    def test_may_chao_khong_co_profile_thi_than_cu_co_thi_gui_khoa(self):
+        c = self.client()
+        c.may_chao("r@1", ["m"], ["low"])
+        c.may_chao("r@1", ["m"], ["low"], [{"ten": "SOUL.md", "sha256": "a" * 64}])
+        chao = [x[3] for x in SEEN if x[0] == "POST" and x[1] == "/admin/hermes/may/chao"]
+        self.assertNotIn("profile_tep", chao[0])                                     # máy cũ: thân y như trước
+        self.assertEqual(chao[1]["profile_tep"], [{"ten": "SOUL.md", "sha256": "a" * 64}])
+
     def test_hang_doi_may_chay_di_dung_sau_duong_va_khong_them_duong_nao(self):
         c = self.client()
         c.may_chao("r@1", ["m"], ["low"])

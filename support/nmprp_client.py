@@ -230,8 +230,13 @@ class NmprpClient:
         return self.post("/admin/hermes/su-kien", {"loai": loai, "chi_tiet": chi_tiet})
 
     # Run queue (used by support.nmprp_may_chay) ---------------------------------------------------
-    def may_chao(self, phien_ban, mo_hinh, suy_luan):
-        return self.post("/admin/hermes/may/chao", {"phien_ban": phien_ban, "mo_hinh": list(mo_hinh), "suy_luan": list(suy_luan)})
+    def may_chao(self, phien_ban, mo_hinh, suy_luan, profile_tep=None):
+        """Hello. `profile_tep` = [{ten, sha256}] of the profile files installed (NMPRP CAU_HINH_PROFILE.md §1); None = old
+        body, byte for byte (the key is not sent at all)."""
+        body = {"phien_ban": phien_ban, "mo_hinh": list(mo_hinh), "suy_luan": list(suy_luan)}
+        if profile_tep is not None:
+            body["profile_tep"] = list(profile_tep)
+        return self.post("/admin/hermes/may/chao", body)
 
     def may_nhan(self):
         return self.post("/admin/hermes/may/nhan", {})
