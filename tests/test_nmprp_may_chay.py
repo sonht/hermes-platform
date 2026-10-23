@@ -740,6 +740,18 @@ class TestKhaiProfile(unittest.TestCase):
         self.assertIn("/opt/data/profiles/nmprp-mapping", seen[0][-1])
         self.assertIn("skills/*/SKILL.md", seen[0][-1])
 
+    def test_khai_profile_mot_tep_khong_doc_duoc_thi_ca_khai_bao_la_rong(self):
+        # Codex P2: danh sách THIẾU một tệp có mặt nhưng không băm được là khai báo sai ⇒ phải trả [], không trả một phần.
+        def mot_tep_hong(argv):
+            return 1, "%s  SOUL.md\nFAIL AGENTS.md\n" % SHA_A
+        self.assertEqual(mc.khai_profile(cau_hinh(khai_profile=True), runner=mot_tep_hong), [])
+
+    def test_khai_profile_tep_vang_mat_thi_bo_qua_khong_coi_la_loi(self):
+        def vang_mat(argv):
+            return 0, "%s  SOUL.md\n" % SHA_A          # AGENTS.md và các tệp tuỳ chọn khác không có ⇒ không có dòng FAIL
+        self.assertEqual(mc.khai_profile(cau_hinh(khai_profile=True), runner=vang_mat),
+                         [{"ten": "SOUL.md", "sha256": SHA_A}])
+
     def test_khai_profile_loi_thi_tra_rong_khong_nem(self):
         def hong(argv):
             raise FileNotFoundError("docker")

@@ -325,10 +325,15 @@ def khai_profile(cfg, runner=None):
     if not getattr(cfg, "khai_profile", False):
         return None
     thu_muc = THU_MUC_PROFILE % cfg.profile
-    lenh = "cd %s && sha256sum %s %s 2>/dev/null; true" % (
-        shlex.quote(thu_muc), " ".join(shlex.quote(t) for t in TEP_PROFILE), MAU_TEP_PROFILE)
+    # Each file is checked on its own: a file that is ABSENT is skipped (optional), a file that EXISTS but cannot be hashed
+    # prints `FAIL <ten>` and the whole declaration becomes [] (never a silently partial list).
+    cac_tep = " ".join(shlex.quote(t) for t in TEP_PROFILE) + " " + MAU_TEP_PROFILE
+    lenh = ('cd %s && for f in %s; do [ -e "$f" ] || continue; '
+            'sha256sum "$f" 2>/dev/null || echo "FAIL $f"; done') % (shlex.quote(thu_muc), cac_tep)
     try:
         _rc, out = (runner or _chay_ngan)(["docker", "exec", "-u", "hermes", cfg.container, "sh", "-c", lenh])
+        if any(dong.startswith("FAIL ") for dong in (out or "").splitlines()):
+            return []
         return doc_dong_sha(out)
     except Exception:                                             # noqa: BLE001 — a missing declaration must not stop the hello
         return []
