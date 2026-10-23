@@ -1,0 +1,14 @@
+{
+  "scope": "local CSV import, not production",
+  "chapter": "6",
+  "pl2_count": 129,
+  "created": 129,
+  "status_counts": {
+    "READY": 0,
+    "NEEDS_REVIEW": 0,
+    "INSUFFICIENT_SOURCE": 129
+  },
+  "repeat_duplicates_skipped": 129,
+  "llm_calls": 0,
+  "note": "No production S1 dossiers copied. Missing source remains INSUFFICIENT_SOURCE."
+}

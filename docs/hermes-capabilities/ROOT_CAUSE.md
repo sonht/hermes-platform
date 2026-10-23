@@ -11,3 +11,14 @@ Gốc NMPRP: `5c1f75598269953d4f51ef661f4ad257cfd0e631`; Hermes: `d5b625aedc2c27
 Baseline local Hermes: 216 tests, OK. Kiểm Git HTTPS cả hai repository thành công. Docker local chưa có container production. Biến `NMPRP_*`/`HERMES_*` không được cấp trong instance; không có cấu hình SSH/VPN Rocky được cấp qua chat. Runtime Rocky, digest ảnh, nội dung profile cài thật, heartbeat DB production, model provider và số PL2 live: **BLOCKED: không có quyền truy cập được cung cấp**. Không suy ra nguyên nhân deploy/runtime cụ thể từ source hoặc ảnh. Không truy cập DB production.
 
 Ảnh bằng chứng giữ nguyên trong gói bàn giao. QG-16 trong ảnh là ĐÃ ĐẠT; không đổi công tắc, không suy nguyên nhân từ nó. Thiết kế cũ ghi phải tắt không ghi đè yêu cầu hiện tại.
+
+## Bằng chứng sau sửa để đối chiếu
+
+- `support/nmprp_client.py:236`: hello thêm trường tùy chọn `kha_nang`, giữ thân cũ khi không dùng stage.
+- `support/nmprp_may_chay.py:382`: lời chào foreground/heartbeat dùng chung `chao`, capability lấy từ probe, không lấy từ một danh sách tên tự do.
+- `support/nmprp_stages.py:37`, `:88`, `:266`: probe → validators → dispatcher/real result routes; `support/nmprp_gd2.py:36` tách khỏi M1 v1.
+- NMPRP `registry/hermes_nang_luc.py:14`, `:36`: từng worker/TTL/model; `api/hermes_admin.py:479`, `:625`: route đọc có quyền riêng. Claim/resume vẫn kiểm worker theo engine hiện có.
+- Các khẳng định AS-IS trong thiết kế ngày 20/10 được đối chiếu lại: ở HEAD nhận ngày 23/10, server đã có M0/S1 backfill/M2 node replay/typed fields/composite/manifest; thiếu chính ở worker và integration. Không xây lại những phần server đã có.
+- Ảnh lỗi ở biểu mẫu Chạy liền đúng suffix capability; lỗi không phải do QG-16. Lựa chọn M0 độc lập được thêm rõ ràng và có bài bấm nút→POST; không tự đổi nghĩa Chạy liền.
+
+Kết luận giới hạn: nguyên nhân thiếu hợp đồng và thực thi ở **mã nguồn worker** đã xác thực và có bản sửa local. Có đang chạy đúng bản cũ trên Rocky hay còn lỗi deployment/provider/heartbeat khác phải đo tại máy đích; hiện BLOCKED, không suy diễn đã được khắc phục production.

@@ -1,0 +1,50 @@
+[
+  {
+    "query": "nội soi sinh thiết gan",
+    "status": 200,
+    "candidate_counts": {
+      "pl3": 5,
+      "pl1": 3,
+      "cpt": 5,
+      "icd9cm": 3,
+      "price": 3
+    },
+    "codes_are_text": true
+  },
+  {
+    "query": "chọc dịch não tủy qua thóp",
+    "status": 200,
+    "candidate_counts": {
+      "pl3": 5,
+      "pl1": 3,
+      "cpt": 5,
+      "icd9cm": 3,
+      "price": 3
+    },
+    "codes_are_text": true
+  },
+  {
+    "query": "phẫu thuật lấy máu tụ trên lều tiểu não",
+    "status": 200,
+    "candidate_counts": {
+      "pl3": 5,
+      "pl1": 3,
+      "cpt": 3,
+      "icd9cm": 0,
+      "price": 3
+    },
+    "codes_are_text": true
+  },
+  {
+    "query": "định lượng glucose máu",
+    "status": 200,
+    "candidate_counts": {
+      "pl3": 5,
+      "pl1": 3,
+      "cpt": 5,
+      "icd9cm": 0,
+      "price": 3
+    },
+    "codes_are_text": true
+  }
+]
