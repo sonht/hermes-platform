@@ -1,6 +1,44 @@
 # Runbook Rocky — bản chuẩn bị, chưa triển khai
 
-**Chỉ thực hiện phần production sau khi chủ dự án phê duyệt mã và thời điểm triển khai. Không tự merge.** Các commit trong báo cáo đang là commit local; cần đưa đúng commit lên remote theo quy trình review trước khi máy Rocky có thể fetch. Không dùng `git pull` để thay đổi production ngoài quy trình này.
+**Chỉ thực hiện phần production sau khi chủ dự án phê duyệt mã và thời điểm triển khai. Không tự merge.** Đã push nhánh `viec/hermes-worker-capabilities` của cả hai repo lên GitHub; chưa merge main, chưa triển khai. NMPRP `d224fb1c`; mã worker Hermes `c66752d` và các báo cáo sau đó trên cùng nhánh. Không dùng `git pull` để thay đổi production ngoài quy trình này.
+
+## 0. Lấy nhánh bản sửa và chọn release
+
+**ROCKY — an toàn để chạy ngay, chỉ tải refs; không đổi mã đang chạy.** Cả hai lệnh phải fetch thành công.
+
+```bash
+git -C /opt/nmprp/app fetch origin viec/hermes-worker-capabilities
+```
+
+```bash
+git -C /home/rocky/hermes-platform fetch origin viec/hermes-worker-capabilities
+```
+
+Chỉ thực hiện các lệnh chuyển nhánh bên dưới **sau khi được duyệt rollout**, đã kiểm kê bước 1, backup bước 2 và canary bước 3–4. Đợi worker hết lượt và dừng dịch vụ trước khi thay mã worker. Không chạy `cap-nhat.sh` trên nhánh main rồi kỳ vọng có bản sửa này.
+
+**ROCKY — sau phê duyệt; dừng nếu checkout có thay đổi hoặc lịch sử production không nằm trước nhánh bản sửa.** Không tự stash, reset hay bỏ qua cổng migration.
+
+```bash
+bash -e -c 'test -z "$(git -C /opt/nmprp/app status --porcelain)"; git -C /opt/nmprp/app merge-base --is-ancestor HEAD origin/viec/hermes-worker-capabilities; bash /opt/nmprp/app/deploy/rocky/cong-an-toan.sh "$(git -C /opt/nmprp/app rev-parse HEAD)" "$(git -C /opt/nmprp/app rev-parse origin/viec/hermes-worker-capabilities)"'
+```
+
+**ROCKY — tạo nhánh theo dõi lần đầu, sau phê duyệt backend.** Lệnh dừng nếu nhánh đã tồn tại; khi đó kiểm lịch sử/upstream trước, không dùng `-C` để ghi đè. Sau lệnh này chạy `cap-nhat.sh` ở bước 5, giữ nguyên cổng Caddy.
+
+```bash
+git -C /opt/nmprp/app switch --create viec/hermes-worker-capabilities --track origin/viec/hermes-worker-capabilities
+```
+
+**ROCKY — sau phê duyệt worker và đã đợi hết lượt.** Dừng dịch vụ trước khi chuyển mã; không đụng container/image/profile M1.
+
+```bash
+sudo systemctl stop hermes-nmprp-may-chay
+```
+
+```bash
+bash -e -c 'test -z "$(git -C /home/rocky/hermes-platform status --porcelain)"; git -C /home/rocky/hermes-platform merge-base --is-ancestor HEAD origin/viec/hermes-worker-capabilities; git -C /home/rocky/hermes-platform switch --create viec/hermes-worker-capabilities --track origin/viec/hermes-worker-capabilities'
+```
+
+Tiếp tục cài profile riêng và probe ở bước 3, giữ `HERMES_RUNNER_STAGES` rỗng trên production cho đến khi từng stage đạt canary và được duyệt bật. `cap-nhat.sh` chỉ cập nhật backend/UI, **không cài skill hoặc bật stage trên worker**. Nếu cổng lịch sử báo lỗi vì main đã tiến xa hơn, cần tích hợp và kiểm thử với main mới; không ép checkout để mất bản production mới hơn.
 
 ## 1. Kiểm kê chỉ đọc trên Rocky
 

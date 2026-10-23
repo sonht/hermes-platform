@@ -1,6 +1,6 @@
 # Thay đổi để review — chưa release
 
-Hai checkout có sẵn, cùng nhánh local `viec/hermes-worker-capabilities`. Không tạo worktree, không reset, không push/PR/merge/deploy. Gốc NMPRP `5c1f75598269953d4f51ef661f4ad257cfd0e631`; Hermes `d5b625aedc2c27309f31ed89e78178993dc40acc`. P0 chẩn đoán được commit trước sửa: Hermes `bde0e25`.
+Hai checkout có sẵn, cùng nhánh `viec/hermes-worker-capabilities`. Không tạo worktree, không reset, đã push nhánh riêng, chưa PR/merge/deploy. Gốc NMPRP `5c1f75598269953d4f51ef661f4ad257cfd0e631`; Hermes `d5b625aedc2c27309f31ed89e78178993dc40acc`. P0 chẩn đoán được commit trước sửa: Hermes `5bdd417`.
 
 ## NMPRP
 
@@ -26,10 +26,10 @@ Không migration mới. Không thay dependency/lockfile, nguồn CSV, dữ liệ
 
 Cloud onboarding đã kiểm install/start lặp lại và lưu `install_script`, `start_skill` vào draft; không thay network policy, secret requirements hay repository membership. Chưa publish snapshot hoặc kiểm fresh task restoration.
 
-## Commit bàn giao local
+## Commit bàn giao trên GitHub
 
-- NMPRP: `b3d56e74` — readiness, M0 độc lập, reader M3, replay, tests, version 1.100.357.
-- Hermes: `bde0e25` — P0 chẩn đoán trước sửa; `8f25f4e` — worker adapters, profile riêng, checkpoints và tests.
+- NMPRP: `d224fb1c` — readiness, M0 độc lập, reader M3, replay, tests, version 1.100.357.
+- Hermes: `5bdd417` — P0 chẩn đoán trước sửa; `c66752d` — worker adapters, profile riêng, checkpoints và tests.
 - Báo cáo/rulebook/evidence được commit riêng sau hai bản mã trên. SHA cuối xem `git log -1` của checkout; không ghi SHA tự tham chiếu vào chính commit.
 
-Đây là các commit local để review, chưa có PR/remote push. Không dùng việc snapshot cloud đã lưu draft để khẳng định những commit này có thể fetch từ GitHub hoặc đã phục hồi được trong task mới.
+Đã push nhánh `viec/hermes-worker-capabilities` vào cả hai remote GitHub. Không sửa `main`. GitHub từng chặn GH007; chỉ email tác giả/committer của các commit mới được đổi sang noreply đã dùng trong repo, nội dung mã giữ nguyên. Không dùng việc snapshot cloud đã lưu draft để khẳng định những commit này có thể fetch từ GitHub hoặc đã phục hồi được trong task mới.
