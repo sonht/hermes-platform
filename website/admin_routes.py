@@ -5,13 +5,14 @@ answer from source code and never call Hermes.
 """
 import json
 import os
+import sqlite3
 from urllib.parse import parse_qs, urlsplit
 
 from support.dashboard_auth import COOKIE as ADMIN_COOKIE, login as admin_login, valid as admin_valid
 from support.faq_candidates import candidates as faq_candidates
 from support.faq_studio import list_articles, save_draft, set_publication
 from support.intelligence import record as record_feedback, recent as feedback_recent
-from support.intelligence import set_status as feedback_set_status, summary as feedback_summary
+from support.intelligence import set_status as feedback_set_status, summary as feedback_summary, validate_report
 
 ADMIN_POST = ("/api/admin/login", "/api/admin/faq/draft", "/api/admin/faq/publish", "/api/admin/report/status")
 
@@ -44,7 +45,7 @@ class AdminRoutes:
             db = os.environ.get("HERMES_FEEDBACK_DB", "")
             try:
                 self.send_json(200, {"rows": list_articles(db, app=app, published_only=True) if db else []})
-            except OSError:
+            except (OSError, sqlite3.Error):
                 self.send_json(503, {"error": "Chưa đọc được FAQ."})
             return True
         readers = {
@@ -59,7 +60,7 @@ class AdminRoutes:
         if db:
             try:
                 self.send_json(200, {"rows": readers[path](db)})
-            except (OSError, ValueError):
+            except (OSError, sqlite3.Error, ValueError):
                 self.send_json(503, {"error": "Không đọc được dữ liệu."})
         return True
 
@@ -102,13 +103,23 @@ class AdminRoutes:
                 self.send_json(200 if updated else 404, {"updated": updated})
         except (ValueError, TypeError, KeyError):
             self.send_json(400, {"error": "Dữ liệu không hợp lệ."})
-        except OSError:
+        except (OSError, sqlite3.Error):
             self.send_json(503, {"error": "Không lưu được dữ liệu."})
+
+    def _client_key(self):
+        """Per-client key. Behind local Caddy the peer is loopback, so use the LAST X-Forwarded-For hop
+        (appended by Caddy; earlier hops are client-supplied and ignored)."""
+        peer = self.client_address[0]
+        if peer in ("127.0.0.1", "::1"):
+            hops = [h.strip() for h in self.headers.get("X-Forwarded-For", "").split(",") if h.strip()]
+            if hops:
+                return hops[-1][:64]
+        return peer
 
     def _admin_login(self):
         # Origin-side safety net only; edge limits and an identity provider come before production.
         from website import server as host
-        if not host.LOGIN_LIMITER.allow("admin-login", self.client_address[0]) is None:
+        if not host.LOGIN_LIMITER.allow("admin-login", self._client_key()) is None:
             return self.send_json(429, {"error": "Thử lại sau."})
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -139,6 +150,7 @@ class AdminRoutes:
             app_id = payload["app"]
             if apps.get(app_id) is None or app_id not in set(os.environ.get("HERMES_FEEDBACK_APPS", "").split(",")):
                 raise ValueError("app")
+            validate_report(app_id, payload["kind"], payload["summary"])
         except (ValueError, TypeError, KeyError, json.JSONDecodeError):
             return self.send_json(400, {"error": "Nội dung góp ý không hợp lệ."})
         if not apps.origin_allowed(app_id, origin):
@@ -155,7 +167,7 @@ class AdminRoutes:
             record_feedback(db, app_id, payload["kind"], payload["summary"])
         except (ValueError, TypeError, KeyError):
             return self.send_json(400, {"error": "Nội dung góp ý không hợp lệ."}, origin=origin)
-        except (OSError, RuntimeError):
+        except (OSError, sqlite3.Error, RuntimeError):
             return self.send_json(503, {"error": "Chưa thể tiếp nhận góp ý. Vui lòng thử lại sau."}, origin=origin)
         finally:
             slots.release()

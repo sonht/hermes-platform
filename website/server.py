@@ -23,7 +23,8 @@ from website.admin_routes import ADMIN_POST, AdminRoutes
 
 APPS = AppRegistry.load(os.environ.get("HERMES_APPS_FILE", ROOT / "apps.json"))
 LIMITER = RateLimiter()
-LOGIN_LIMITER = RateLimiter(per_session=5, per_app=5, daily_per_app=200)
+# 5 tries/min per client; the app-wide cap is high so one caller cannot lock every admin out.
+LOGIN_LIMITER = RateLimiter(per_session=5, per_app=300, daily_per_app=5000)
 _public_slots = threading.BoundedSemaphore(2)
 _SESSION_OK = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _PUBLIC_MAX_BYTES = 8192
@@ -52,7 +53,7 @@ class Handler(AdminRoutes, SimpleHTTPRequestHandler):
         return None
 
     def do_OPTIONS(self):
-        if self.path != "/api/public/chat":
+        if self.path not in ("/api/public/chat", "/api/public/feedback"):
             self.send_error(404)
             return
         origin = self.headers.get("Origin")

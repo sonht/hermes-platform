@@ -24,7 +24,7 @@ class AdminRoutesTests(unittest.TestCase):
         self._saved = (server_module.APPS, server_module.LIMITER, server_module.LOGIN_LIMITER)
         server_module.APPS = AppRegistry({"nmprp": {"name": "n", "origins": [DM], "knowledge": self.tmp.name}})
         server_module.LIMITER = RateLimiter()
-        server_module.LOGIN_LIMITER = RateLimiter(per_session=5, per_app=5, daily_per_app=200)
+        server_module.LOGIN_LIMITER = RateLimiter(per_session=5, per_app=300, daily_per_app=5000)
         self.env = patch.dict(os.environ, {
             "HERMES_DASHBOARD_PASSWORD": PW, "HERMES_DASHBOARD_SESSION_KEY": KEY,
             "HERMES_FEEDBACK_DB": str(Path(self.tmp.name) / "fb.db"), "HERMES_FEEDBACK_APPS": "nmprp"})
@@ -128,6 +128,41 @@ class AdminRoutesTests(unittest.TestCase):
                                         {"Origin": DM})
         self.assertEqual(status, 200)
         self.assertNotIn("frontend/", body["answer"])
+
+    def test_login_limit_is_per_client_not_global(self):
+        for _ in range(6):
+            self.call("POST", "/api/admin/login", {"password": "x"}, {"X-Forwarded-For": "9.9.9.9"})
+        self.assertEqual(self.call("POST", "/api/admin/login", {"password": PW}, {"X-Forwarded-For": "9.9.9.9"})[0], 429)
+        self.assertEqual(self.call("POST", "/api/admin/login", {"password": PW}, {"X-Forwarded-For": "8.8.8.8"})[0], 200)
+
+    def test_login_non_ascii_password_is_401_not_500(self):
+        self.assertEqual(self.call("POST", "/api/admin/login", {"password": "mật-khẩu-sai"})[0], 401)
+
+    def test_options_preflight_for_feedback(self):
+        conn = HTTPConnection("127.0.0.1", self.server.server_port, timeout=3)
+        conn.request("OPTIONS", "/api/public/feedback", headers={"Origin": DM, "Access-Control-Request-Method": "POST"})
+        r = conn.getresponse(); r.read(); conn.close()
+        self.assertIn(r.status, (200, 204))
+
+    def test_faq_draft_keeps_long_answer_lines(self):
+        from support import faq_studio
+        db = str(Path(self.tmp.name) / "fb.db")
+        long_line = "x" * 1500
+        faq_studio.save_draft(db, "nmprp", "Câu hỏi đủ dài?", long_line)
+        self.assertIn(long_line, str(faq_studio.list_articles(db)))
+
+    def test_feedback_duplicates_count_once_and_bad_payload_is_free(self):
+        from support import intelligence
+        db = str(Path(self.tmp.name) / "fb.db")
+        a = intelligence.record(db, "nmprp", "bug", "Nút lưu không phản hồi")
+        b = intelligence.record(db, "nmprp", "bug", "Nút lưu không phản hồi")
+        self.assertEqual(a, b)
+        with patch.dict(os.environ, {"HERMES_FEEDBACK_ENABLED": "1"}):
+            for _ in range(8):
+                self.assertEqual(self.call("POST", "/api/public/feedback",
+                                           {"app": "nmprp", "kind": "bug", "summary": "x"}, {"Origin": DM})[0], 400)
+            ok = {"app": "nmprp", "kind": "bug", "summary": "Một báo cáo hợp lệ dài đủ"}
+            self.assertEqual(self.call("POST", "/api/public/feedback", ok, {"Origin": DM})[0], 202)
 
 
 if __name__ == "__main__":

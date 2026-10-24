@@ -20,14 +20,14 @@ SECRETS = re.compile(r"(?i)\b(password|passwd|token|secret|api[_-]?key|authoriza
 BEARER = re.compile(r"(?i)bearer\s+\S+")
 
 
-def sanitize(value: str) -> str:
+def sanitize(value: str, limit: int = MAX_TEXT) -> str:
     if not isinstance(value, str):
         raise ValueError("Expected text")
-    value = EMAIL.sub("[email]", value[:MAX_TEXT])
+    value = EMAIL.sub("[email]", value[:limit])
     value = PHONE.sub("[phone]", value)
     value = SECRETS.sub("[credential]", value)
     value = BEARER.sub("[credential]", value)
-    return value.strip()[:MAX_TEXT]
+    return value.strip()[:limit]
 
 
 def _connect(db_path: str):
@@ -45,16 +45,28 @@ def _connect(db_path: str):
     return db
 
 
-def record(db_path: str, app: str, kind: str, summary: str) -> int:
-    if kind not in KINDS or not re.fullmatch(r"[a-z][a-z0-9_-]{1,31}", app):
+def validate_report(app: str, kind: str, summary: str) -> str:
+    """Full payload validation, no storage. Returns the sanitized summary."""
+    if not isinstance(app, str) or not isinstance(kind, str) or kind not in KINDS \
+            or not re.fullmatch(r"[a-z][a-z0-9_-]{1,31}", app):
         raise ValueError("Invalid category or application")
     safe = sanitize(summary)
     if len(safe) < 8:
         raise ValueError("Insufficient description")
+    return safe
+
+
+def record(db_path: str, app: str, kind: str, summary: str) -> int:
+    safe = validate_report(app, kind, summary)
+    day = datetime.now(timezone.utc).date().isoformat()
     with _lock, _connect(db_path) as db:
+        # Same app + kind + sanitized text on the same day counts once (no per-caller identifiers kept).
+        same = db.execute("SELECT id FROM feedback WHERE day=? AND app=? AND kind=? AND summary=?",
+                          (day, app, kind, safe)).fetchone()
+        if same:
+            return same[0]
         cursor = db.execute(
-            "INSERT INTO feedback(day,app,kind,summary) VALUES (?,?,?,?)",
-            (datetime.now(timezone.utc).date().isoformat(), app, kind, safe))
+            "INSERT INTO feedback(day,app,kind,summary) VALUES (?,?,?,?)", (day, app, kind, safe))
         return cursor.lastrowid
 
 

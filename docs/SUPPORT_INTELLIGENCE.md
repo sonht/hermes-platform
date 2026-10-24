@@ -32,7 +32,7 @@ No raw chat transcripts, IPs, access tokens, user identifiers, screenshots or pa
 - Default retention target: 30 days for minimized individual reports; aggregated counts may follow an approved separate policy.
 
 ## Current implementation
-`support/intelligence.py` provides SQLite schema, basic redaction, aggregate counts and a callable retention routine. It is **not wired into website/server.py** and no real user data is collected. A production deployment requires an explicit retention scheduler and hardened intake service.
+`support/intelligence.py` provides SQLite schema, basic redaction, aggregate counts and a callable retention routine. It is wired into `website/server.py` only as the opt-in `POST /api/public/feedback` (off unless `HERMES_FEEDBACK_ENABLED=1`; needs a registered app listed in `HERMES_FEEDBACK_APPS`, an allowed origin and passes the rate limiter) and the admin-only dashboard routes. When enabled it stores minimized, redacted reports (identical app + kind + text on the same day count once). A production deployment requires an explicit retention scheduler and hardened intake service.
 
 ## Delivery stages
 H05-A: schema, tests, admin-only offline aggregates.

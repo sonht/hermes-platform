@@ -36,7 +36,7 @@ def save_draft(db_path, app, question, answer):
         raise ValueError("Invalid length")
     # No HTML rendering; textContent only. Sanitize common secrets/PII.
     question=sanitize(question)
-    answer="\n".join(sanitize(line) for line in answer.splitlines())[:3000]
+    answer="\n".join(sanitize(line,3000) for line in answer.splitlines())[:3000]
     now=datetime.now(timezone.utc).isoformat()
     with _connect(db_path) as db:
         _init(db)

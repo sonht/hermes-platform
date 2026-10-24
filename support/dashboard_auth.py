@@ -19,7 +19,7 @@ def login(password):
     expected = os.environ.get("HERMES_DASHBOARD_PASSWORD", "")
     if len(expected) < 16 or not isinstance(password, str):
         return None
-    if not hmac.compare_digest(password, expected):
+    if not hmac.compare_digest(password.encode(), expected.encode()):
         return None
     payload = f"{int(time.time()) + TTL}:{secrets.token_hex(16)}"
     signature = hmac.new(_key(), payload.encode(), hashlib.sha256).hexdigest()
