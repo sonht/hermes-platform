@@ -33,6 +33,7 @@ Run (see the doc):  set -a; . deploy/rocky/nmprp-service.env; set +a; python3 -m
 from __future__ import annotations
 
 import argparse
+from support import nmprp_stages as stages
 import fcntl
 import os
 import re
@@ -45,8 +46,9 @@ from datetime import datetime, timezone
 
 from support import nmprp_shadow as sh
 from support.nmprp_client import NmprpClient, NmprpError
+from support.nmprp_run_errors import DungLuot
 
-PHIEN_BAN = "nmprp-may-chay@0.1"
+PHIEN_BAN = "nmprp-may-chay@0.2"
 PHIEN_BAN_GOI_Y = "nmprp-retrieval-assist@may-0.1"          # <= 40 characters (NMPRP limit)
 MO_HINH_AN_TOAN = re.compile(r"^[A-Za-z0-9._:/@-]{1,100}$")
 SUY_LUAN_MAC_DINH = ("low", "medium", "high")
@@ -79,12 +81,16 @@ class CauHinh:
     """What THIS runner allows. Models are never hard-coded: the operator lists them (empty = the profile's default only)."""
 
     def __init__(self, mo_hinh=(), suy_luan=SUY_LUAN_MAC_DINH, tep_dung=DUNG_MAC_DINH, tep_khoa=KHOA_MAC_DINH,
-                 container=sh.CONTAINER, profile=sh.PROFILE, ky_nang=sh.SKILL, khai_profile=False):
+                 container=sh.CONTAINER, profile=sh.PROFILE, ky_nang=sh.SKILL, khai_profile=False, enabled_stages=(), stage_profile=stages.PROFILE, stage_state="/home/rocky/hermes-shadow-out/stages"):
         self.mo_hinh = tuple(m for m in mo_hinh if MO_HINH_AN_TOAN.match(m))
         self.suy_luan = tuple(x for x in suy_luan if x in SUY_LUAN_HERMES)
         self.tep_dung = tep_dung
         self.tep_khoa = tep_khoa
         self.container, self.profile, self.ky_nang = container, profile, ky_nang
+        if any(s not in stages.STAGES for s in enabled_stages):
+            raise ValueError('Unsupported HERMES_RUNNER_STAGES')
+        self.stages = tuple(dict.fromkeys(enabled_stages))
+        self.stage_profile, self.stage_state = stage_profile, stage_state
         self.khai_profile = bool(khai_profile)                    # declare profile files at hello (on in production)
 
     @classmethod
@@ -93,7 +99,9 @@ class CauHinh:
         ds = lambda k, mac: tuple(x.strip() for x in e.get(k, mac).split(",") if x.strip())      # noqa: E731
         return cls(ds("HERMES_RUNNER_MODELS", ""), ds("HERMES_RUNNER_REASONING", ",".join(SUY_LUAN_MAC_DINH)),
                    e.get("HERMES_RUNNER_DUNG", DUNG_MAC_DINH), e.get("HERMES_RUNNER_LOCK", KHOA_MAC_DINH),
-                   khai_profile=e.get("HERMES_RUNNER_KHAI_PROFILE", "1").strip() != "0")
+                   khai_profile=e.get("HERMES_RUNNER_KHAI_PROFILE", "1").strip() != "0",
+                   enabled_stages=ds("HERMES_RUNNER_STAGES", ""),
+                   stage_state=e.get("HERMES_RUNNER_STAGE_STATE", "/home/rocky/hermes-shadow-out/stages"))
 
 
 # --- single-instance lock ---------------------------------------------------------------------------------------
@@ -133,14 +141,6 @@ def doc_pid_khoa(duong: str) -> str:
         return ""
 
 
-class DungLuot(Exception):
-    """Internal: stop the current run with a given final state."""
-
-    def __init__(self, trang_thai, thong_diep):
-        Exception.__init__(self, thong_diep)
-        self.trang_thai, self.thong_diep = trang_thai, thong_diep
-
-
 # --- one run ---------------------------------------------------------------------------------------------------
 
 def _chia_lo(pl2: list, me: int) -> list:
@@ -160,14 +160,28 @@ def xu_ly_luot(client, luot: dict, cau_hinh: CauHinh, runner=None) -> str:
     """Process one run until it ends or must pause. Returns the final state sent to NMPRP. Network errors propagate."""
     luot_id = luot["luot_id"]
     try:
+        qt = luot.get('quy_trinh') or 'v1'
+        if qt in stages.STAGES:
+            return stages.execute(client, luot, cau_hinh, runner)
+        if qt != 'v1':
+            raise DungLuot('LOI', 'Quy trinh khong duoc may chay ho tro')
         return _chay_luot(client, luot, cau_hinh, runner)
     except DungLuot as d:
         client.may_ket_thuc(luot_id, d.trang_thai, d.thong_diep)
         ghi_nhat_ky("luot %s -> %s: %s" % (luot_id, d.trang_thai, d.thong_diep))
         return d.trang_thai
+    except stages.StageError as e:
+        client.may_ket_thuc(luot_id, "LOI", str(e))
+        ghi_nhat_ky("luot %s stage=%s worker=%s LOI %s" % (luot_id, luot.get("quy_trinh"), PHIEN_BAN, e))
+        return "LOI"
     except NmprpError:
         raise                                                    # transient: the run stays DANG_CHAY, resumed later
     except sh.ShadowStop as e:
+        # Log BEFORE delivery so an unavailable NMPRP endpoint cannot hide the
+        # runner failure. Do not print stderr/model text or arbitrary exception text.
+        rc = re.search(r"hermes tra ma loi (-?\d+)", str(e))
+        ghi_nhat_ky("luot %s stage=%s Hermes failure=%s" % (
+            luot_id, luot.get("quy_trinh") or "v1", "EXIT_" + rc.group(1) if rc else type(e).__name__))
         client.may_ket_thuc(luot_id, "LOI", "Hermes: %s" % str(e)[:300])
         return "LOI"
     except Exception as e:                                       # noqa: BLE001 — class only, never a message that may carry text
@@ -355,7 +369,7 @@ class NhipTim(threading.Thread):
                 continue
             try:
                 client = client or self._tao()
-                client.may_chao(PHIEN_BAN, self._cfg.mo_hinh, self._cfg.suy_luan, khai_profile(self._cfg))
+                chao(client, self._cfg)
             except Exception:                                    # noqa: BLE001 — a missed hello is harmless, the main loop retries
                 client = None
 
@@ -363,11 +377,18 @@ class NhipTim(threading.Thread):
         self._dung.set()
 
 
+def chao(client, cfg):
+    profile = khai_profile(cfg)
+    if cfg.stages:
+        return client.may_chao(PHIEN_BAN, cfg.mo_hinh, cfg.suy_luan, profile, kha_nang=stages.ready(cfg))
+    return client.may_chao(PHIEN_BAN, cfg.mo_hinh, cfg.suy_luan, profile)
+
+
 def mot_vong(client, cfg: CauHinh, runner=None) -> str:
     """One poll. Returns "DUNG" (stop file), "KHONG_VIEC", or the final state of the run it processed."""
     if os.path.exists(cfg.tep_dung):
         return "DUNG"
-    client.may_chao(PHIEN_BAN, cfg.mo_hinh, cfg.suy_luan, khai_profile(cfg))
+    chao(client, cfg)
     r = client.may_nhan()
     luot = (r or {}).get("luot")
     if not luot:
