@@ -64,6 +64,31 @@ class M0BatchTests(unittest.TestCase):
         self.assertTrue(invalid.exists())
         self.assertEqual(c2.loai('stage')[0][2][0]['noi_dung']['muc_dich']['van_ban'], '')
 
+    def test_python_m_worker_keeps_resumable_stop_state(self):
+        import sys
+        script = r"""
+import os, sys, tempfile, runpy
+from support import nmprp_client, nmprp_stages
+class Client:
+    def may_chao(self, *a, **kw): return {}
+    def may_nhan(self): return {'luot': {'luot_id': 'HL_aaaaaaaaaaaa', 'quy_trinh': 'm0'}}
+    def may_ket_thuc(self, lid, state, note): print('FINAL_STATE=' + state)
+def stop(*args):
+    from support.nmprp_may_chay import DungLuot
+    raise DungLuot('TAM_DUNG', 'M0_EVIDENCE_NOT_IN_SOURCE')
+nmprp_client.NmprpClient = Client
+nmprp_stages.execute = stop
+with tempfile.TemporaryDirectory() as td:
+    os.environ['HERMES_RUNNER_LOCK'] = td + '/lock'
+    os.environ['HERMES_RUNNER_DUNG'] = td + '/stop'
+    sys.argv = ['worker', '--mot-lan']
+    runpy._run_module_as_main('support.nmprp_may_chay')
+"""
+        result = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, timeout=15)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('FINAL_STATE=TAM_DUNG', result.stdout)
+        self.assertNotIn('FINAL_STATE=LOI', result.stdout)
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
