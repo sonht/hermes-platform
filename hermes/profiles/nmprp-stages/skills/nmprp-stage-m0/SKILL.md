@@ -5,7 +5,7 @@ description: Thực thi M0 NMPRP theo snapshot đã ghim, chỉ đề xuất.
 
 # Hợp đồng worker v1
 
-Đầu vào pl2 chứa đúng một mã và tên, contract m0-1. Trả {"items":[{"pl2_code":"mã nguyên văn","trang_thai":"READY|NEEDS_REVIEW|INSUFFICIENT_SOURCE|FAILED","noi_dung":{},"co":[],"ly_do":""}]}.
+Nhận đầu vào pl2 là một lô 1–10 mã và tên, contract m0-1. Phân rã độc lập từng PL2. Trả đúng một JSON {"items":[{"pl2_code":"mã nguyên văn","trang_thai":"READY|NEEDS_REVIEW|INSUFFICIENT_SOURCE|FAILED","noi_dung":{},"co":[],"ly_do":""}]}, phủ đủ mỗi mã đầu vào đúng một lần, không thêm hoặc gộp mã. Chỉ trả JSON, không hỏi lại hoặc gọi công cụ. Với từng PL2 chưa đủ chứng cứ, dùng NEEDS_REVIEW/INSUFFICIENT_SOURCE theo hợp đồng; không bỏ mã khỏi lô.
 noi_dung: hanh_dong_chinh/dich/muc_dich là đối tượng {ma,van_ban,trich_nguon}; duong_tiep_can,phuong_phap,cong_nghe,thiet_bi,huong_dan,mau_vat_lieu,pham_vi_muc_do,vo_cam,boi_canh,thanh_phan là danh sách tối đa 8 đối tượng. Mã chữ IN HOA tối đa 60 ký tự; không biết dùng CHUA_RO. van_ban/trich_nguon phải nguyên văn trong tên. thanh_phan thêm vai_tro thuộc contract. Không khai phan_tach/co_thanh_phan_gop. READY bắt buộc hành động và đích có chứng cứ. FAILED/INSUFFICIENT_SOURCE phải có lý do. Không chọn CPT.
 
 ## Quy tắc tham chiếu nguyên văn
