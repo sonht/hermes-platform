@@ -4,6 +4,7 @@ No direct Hermes LLM connection yet; never expose an unauthenticated agent.
 """
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlsplit
 import json
 import hmac
 import os
@@ -18,18 +19,26 @@ from support.hermes_gateway import ask_hermes
 from support.knowledge import NO_ANSWER, find_entry, load_entries, render_answer
 from website.registry import AppRegistry
 from website.ratelimit import RateLimiter
+from website.admin_routes import ADMIN_POST, AdminRoutes
 
 APPS = AppRegistry.load(os.environ.get("HERMES_APPS_FILE", ROOT / "apps.json"))
 LIMITER = RateLimiter()
+# 5 tries/min per client; the app-wide cap is high so one caller cannot lock every admin out.
+LOGIN_LIMITER = RateLimiter(per_session=5, per_app=300, daily_per_app=5000)
 _public_slots = threading.BoundedSemaphore(2)
 _SESSION_OK = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _PUBLIC_MAX_BYTES = 8192
 
-class Handler(SimpleHTTPRequestHandler):
+class Handler(AdminRoutes, SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
     def do_GET(self):
+        path = urlsplit(self.path).path
+        if path in ("/dashboard", "/dashboard/"):
+            self.path = "/dashboard.html"
+        if self.admin_get(path):
+            return
         if self.path.startswith("/api/"):
             self.send_error(404)
             return
@@ -44,7 +53,7 @@ class Handler(SimpleHTTPRequestHandler):
         return None
 
     def do_OPTIONS(self):
-        if self.path != "/api/public/chat":
+        if self.path not in ("/api/public/chat", "/api/public/feedback"):
             self.send_error(404)
             return
         origin = self.headers.get("Origin")
@@ -62,6 +71,10 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/api/public/chat":
             return self.handle_public_chat()
+        if self.path in ADMIN_POST:
+            return self.admin_post(self.path)
+        if self.path == "/api/public/feedback":
+            return self.public_feedback(APPS, LIMITER, _public_slots)
         if self.path != "/api/chat":
             self.send_error(404)
             return
