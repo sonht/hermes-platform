@@ -184,6 +184,11 @@ def xu_ly_luot(client, luot: dict, cau_hinh: CauHinh, runner=None) -> str:
     except NmprpError:
         raise                                                    # transient: the run stays DANG_CHAY, resumed later
     except sh.ShadowStop as e:
+        # Log BEFORE delivery so an unavailable NMPRP endpoint cannot hide the
+        # runner failure. Do not print stderr/model text or arbitrary exception text.
+        rc = re.search(r"hermes tra ma loi (-?\d+)", str(e))
+        ghi_nhat_ky("luot %s stage=%s Hermes failure=%s" % (
+            luot_id, luot.get("quy_trinh") or "v1", "EXIT_" + rc.group(1) if rc else type(e).__name__))
         client.may_ket_thuc(luot_id, "LOI", "Hermes: %s" % str(e)[:300])
         return "LOI"
     except Exception as e:                                       # noqa: BLE001 — class only, never a message that may carry text

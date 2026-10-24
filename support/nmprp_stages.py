@@ -109,6 +109,8 @@ def validate(stage, unit, result):
                     if not isinstance(v, dict):
                         raise StageError('M0_VALUE')
                     ma = v.get('ma', '')
+                    if not isinstance(ma, str):
+                        raise StageError('M0_CODE_MUST_BE_TEXT')
                     exempt = ma == 'CHUA_RO' or ma.endswith(('_CHUA_RO', '_KHONG'))
                     if not exempt and not v.get('trich_nguon'):
                         raise StageError('M0_EVIDENCE_REQUIRED')
@@ -118,6 +120,8 @@ def validate(stage, unit, result):
             if x['trang_thai'] == 'READY':
                 for f in ('hanh_dong_chinh', 'dich'):
                     v = content.get(f) or {}
+                    if not isinstance(v, dict):
+                        raise StageError('M0_VALUE')
                     if not v.get('trich_nguon') or v.get('ma') in ('CHUA_RO', 'UNCERTAIN') or v.get('ma', '').endswith(('_CHUA_RO', '_KHONG')):
                         raise StageError('M0_READY_WITHOUT_EVIDENCE')
     elif stage == 'm2':
@@ -209,13 +213,18 @@ class Execution:
         return data
 
     def report(self, phase, state, note=''):
+        counters = {'lan_goi': self.calls, 'token_da_dung': self.tokens}
+        counters.update(getattr(self, 'progress', {}))
         r = self.client.may_tien_do(self.job['luot_id'], {phase: {'tt': state, 'ghi_chu': note[:500]}},
-                                  {'lan_goi': self.calls, 'token_da_dung': self.tokens})
+                                  counters)
         from support.nmprp_may_chay import DungLuot
         if r.get('ly_do_dung') == 'HUY':
             raise DungLuot('DA_HUY', 'Admin huy luot')
 
     def infer(self, stage, unit, identity, *, model='', reasoning='', body=None, profile=None, skill=None):
+        if stage == 'm0':
+            from support.nmprp_m0 import infer
+            return infer(self, unit, identity, model, reasoning)
         from support.nmprp_may_chay import DungLuot, MUC_SUY_LUAN_MAC_DINH
         body = body or prompt(stage, unit)
         if len(body.encode()) > sh.MAX_PROMPT_BYTES:
@@ -240,8 +249,9 @@ class Execution:
         self.report('SUY_LUAN', 'DANG', '%s %s' % (stage, key[:12]))
         pending.write_text(fingerprint)
         started = time.monotonic()
+        from support.nmprp_runtime_diagnostics import stage_runner
         out, usage = sh.goi_hermes(body, '%s-%s-%d.json' % (stage, self.job['luot_id'], self.calls),
-                                   self.cfg.container, profile or self.cfg.stage_profile, skill or STAGES[stage][1], self.runner,
+                                   self.cfg.container, profile or self.cfg.stage_profile, skill or STAGES[stage][1], self.runner or stage_runner,
                                    model, reasoning or MUC_SUY_LUAN_MAC_DINH)
         self.tokens += int(usage.get('total_tokens') or sh.uoc_token(body))
         self.report('SUY_LUAN', 'XONG', '%s %s' % (stage, key[:12]))
@@ -275,8 +285,8 @@ def execute(client, job, cfg, runner=None):
     if stage == 'm0':
         if (job.get('m0') or {}).get('hop_dong') != 'm0-1':
             raise StageError('M0_UNSUPPORTED_CONTRACT')
-        done = set(job.get('pl2_da_xong') or [])
-        units = [{'pl2': [p], 'contract': job['m0']} for p in job['ds_pl2'] if p['code'] not in done]
+        from support.nmprp_m0 import execute as execute_m0
+        return execute_m0(run)
     else:
         data = job.get('m23') or {}
         if data.get('quy_trinh') != stage or not data.get('snapshot_id'):

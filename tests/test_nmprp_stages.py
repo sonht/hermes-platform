@@ -54,7 +54,7 @@ class StageTests(unittest.TestCase):
             self.assertEqual(c.loai('goi_y'), [])
             self.assertEqual(c.loai('ket_qua'), [])
             self.assertIn('nmprp-stage-m0', r.goi[0])
-            records = list((st.Path(d) / job['luot_id']).glob('*.json'))
+            records = [p for p in (st.Path(d) / job['luot_id']).glob('*.json') if not p.name.endswith('.context.json')]
             self.assertEqual(len(records), 1)
             self.assertEqual(json.loads(records[0].read_text())['review'], 'AI_PROVISIONAL')
             # Lost response/restart: same job is re-submitted from checkpoint, never pays again.
@@ -69,12 +69,12 @@ class StageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             cfg = mc.CauHinh(enabled_stages=['m0'], stage_state=d)
             job = luot(quy_trinh='m0', ds_pl2=[P], m0={'hop_dong': 'm0-1'})
-            for caps, answer in [([], M0), (['PHAN_RA'], {'items': []})]:
+            for caps, answer, state in [([], M0, 'LOI'), (['PHAN_RA'], {'items': []}, 'TAM_DUNG')]:
                 c = Client()
                 with patch.object(st, 'ready', return_value=caps):
-                    self.assertEqual(mc.xu_ly_luot(c, job, cfg, runner_tra(answer)), 'LOI')
+                    self.assertEqual(mc.xu_ly_luot(c, job, cfg, runner_tra(answer)), state)
                 self.assertEqual(c.loai('stage'), [])
-                self.assertEqual(c.cuoi()[0], 'LOI')
+                self.assertEqual(c.cuoi()[0], state)
 
     def test_m2_coverage_scope_and_no_upstream_calls(self):
         unit = {'khoa_nhanh': 'Endocrine > Thyroid', 'pl2': [P]}
@@ -140,7 +140,7 @@ class StageTests(unittest.TestCase):
             job['ds_pl2'] = [dict(P, name='Changed')]
             self.assertEqual(mc.xu_ly_luot(Client(), job, cfg, runner_tra(M0)), 'LOI')
 
-    def test_bad_unit_does_not_hide_other_units_and_run_is_not_success(self):
+    def test_bad_batch_pauses_before_spending_on_more_units(self):
         second = dict(P, code='7.1')
         valid = copy.deepcopy(M0); valid['items'][0]['pl2_code'] = '7.1'
         replies = [{'items': []}, valid]
@@ -149,9 +149,9 @@ class StageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d, patch.object(st, 'ready', return_value=['PHAN_RA']):
             c = Client()
             job = luot(quy_trinh='m0', ds_pl2=[P, second], m0={'hop_dong': 'm0-1'})
-            self.assertEqual(mc.xu_ly_luot(c, job, mc.CauHinh(enabled_stages=['m0'], stage_state=d), runner), 'LOI')
-            self.assertEqual([x[2][0]['pl2_code'] for x in c.loai('stage')], ['7.1'])
-            self.assertEqual(c.cuoi()[0], 'LOI')
+            self.assertEqual(mc.xu_ly_luot(c, job, mc.CauHinh(enabled_stages=['m0'], stage_state=d), runner), 'TAM_DUNG')
+            self.assertEqual(c.loai('stage'), [])
+            self.assertEqual(c.cuoi()[0], 'TAM_DUNG')
 
     def test_pending_paid_call_and_invalid_job_id_fail_closed(self):
         with tempfile.TemporaryDirectory() as d, patch.object(st, 'ready', return_value=['PHAN_RA']):
@@ -160,7 +160,7 @@ class StageTests(unittest.TestCase):
             path = st.Path(d) / job['luot_id']; path.mkdir()
             (path / (hashlib.sha256(P['code'].encode()).hexdigest() + '.pending')).write_text('ambiguous')
             r = runner_tra(M0)
-            self.assertEqual(mc.xu_ly_luot(Client(), job, cfg, r), 'LOI')
+            self.assertEqual(mc.xu_ly_luot(Client(), job, cfg, r), 'TAM_DUNG')
             self.assertEqual(r.goi, [])
             job['luot_id'] = '../../escape'
             self.assertEqual(mc.xu_ly_luot(Client(), job, cfg, r), 'LOI')
