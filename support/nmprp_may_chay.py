@@ -46,6 +46,7 @@ from datetime import datetime, timezone
 
 from support import nmprp_shadow as sh
 from support.nmprp_client import NmprpClient, NmprpError
+from support.nmprp_run_errors import DungLuot
 
 PHIEN_BAN = "nmprp-may-chay@0.2"
 PHIEN_BAN_GOI_Y = "nmprp-retrieval-assist@may-0.1"          # <= 40 characters (NMPRP limit)
@@ -138,14 +139,6 @@ def doc_pid_khoa(duong: str) -> str:
             return f.read().strip()
     except OSError:
         return ""
-
-
-class DungLuot(Exception):
-    """Internal: stop the current run with a given final state."""
-
-    def __init__(self, trang_thai, thong_diep):
-        Exception.__init__(self, thong_diep)
-        self.trang_thai, self.thong_diep = trang_thai, thong_diep
 
 
 # --- one run ---------------------------------------------------------------------------------------------------
