@@ -29,6 +29,41 @@ def responder(fail_at=0):
 
 
 class M0BatchTests(unittest.TestCase):
+    def test_unknown_marker_is_canonicalized_but_real_evidence_is_checked(self):
+        for code in ('CHUA_RO', 'MD_CHUA_RO'):
+            result = copy.deepcopy(M0)
+            value = {'ma': code, 'van_ban': 'CHUA_RO', 'trich_nguon': ''}
+            result['items'][0]['noi_dung']['muc_dich'] = value
+            st.validate('m0', {'pl2': [P]}, result)
+            self.assertEqual(value['van_ban'], '')
+        for code, text, quote in [('MD_DIEU_TRI', 'CHUA_RO', ''),
+                                  ('CHUA_RO', 'invented', ''),
+                                  ('CHUA_RO', 'CHUA_RO', 'invented')]:
+            result = copy.deepcopy(M0)
+            result['items'][0]['noi_dung']['muc_dich'] = {
+                'ma': code, 'van_ban': text, 'trich_nguon': quote}
+            with self.assertRaises(st.StageError):
+                st.validate('m0', {'pl2': [P]}, result)
+
+    def test_repaired_quarantined_batch_is_replayed_without_model_call(self):
+        self.job['ds_pl2'] = self.job['ds_pl2'][:10]
+        r = responder()
+        self.assertEqual(mc.xu_ly_luot(Client(), self.job, self.cfg, r), 'XONG')
+        from pathlib import Path
+        folder = Path(self.tmp.name) / self.job['luot_id']
+        target = next(p for p in folder.glob('*.json') if not p.name.endswith('.context.json'))
+        saved = json.loads(target.read_text())
+        for item in saved['result']['items']:
+            item['noi_dung']['muc_dich'] = {'ma': 'CHUA_RO', 'van_ban': 'CHUA_RO', 'trich_nguon': ''}
+        invalid = target.with_suffix('.invalid-1')
+        invalid.write_text(json.dumps(saved))
+        target.unlink()
+        r2, c2 = responder(), Client()
+        self.assertEqual(mc.xu_ly_luot(c2, self.job, self.cfg, r2), 'XONG')
+        self.assertEqual(r2.calls, [])
+        self.assertTrue(invalid.exists())
+        self.assertEqual(c2.loai('stage')[0][2][0]['noi_dung']['muc_dich']['van_ban'], '')
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

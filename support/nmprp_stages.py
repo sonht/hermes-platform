@@ -112,6 +112,10 @@ def validate(stage, unit, result):
                     if not isinstance(ma, str):
                         raise StageError('M0_CODE_MUST_BE_TEXT')
                     exempt = ma == 'CHUA_RO' or ma.endswith(('_CHUA_RO', '_KHONG'))
+                    # A missing value is a code, not a quotation. Canonicalize
+                    # only the exact unknown marker; never erase other text.
+                    if exempt and v.get('van_ban') == 'CHUA_RO' and not v.get('trich_nguon'):
+                        v['van_ban'] = ''
                     if not exempt and not v.get('trich_nguon'):
                         raise StageError('M0_EVIDENCE_REQUIRED')
                     for f in ('trich_nguon', 'van_ban'):
