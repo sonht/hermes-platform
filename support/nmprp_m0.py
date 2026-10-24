@@ -65,6 +65,20 @@ def infer(run, unit, identity, model, reasoning):
     pending = target.with_suffix('.pending')
     if pending.exists():
         raise st.StageError('AMBIGUOUS_MODEL_CALL_REQUIRES_RECONCILIATION')
+    # Revalidate paid, quarantined output after a validator repair. Preserve
+    # the original artifact and all fingerprint/pending safeguards.
+    for previous in sorted(run.path.glob(key + '.invalid-*'), reverse=True):
+        saved = json.loads(previous.read_text())
+        if saved.get('input_hash') != fingerprint:
+            continue
+        try:
+            items = st.validate('m0', unit, saved['result'])
+            if any(x['trang_thai'] == 'FAILED' for x in items):
+                continue
+        except st.StageError:
+            continue
+        save(target, saved)
+        return saved['result']
     attempts_path = target.with_suffix('.attempts')
     attempts = int(attempts_path.read_text()) if attempts_path.exists() else 0
     if attempts >= MAX_ATTEMPTS:
